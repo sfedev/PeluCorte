@@ -141,6 +141,16 @@ try
 
     var app = builder.Build();
 
+    // Detrás de un proxy (Render, Fly, Cloudflare...). Confiamos en X-Forwarded-Proto
+    // para que la app sepa si la petición original venía por HTTPS y los redirects
+    // se hagan al esquema correcto.
+    app.UseForwardedHeaders(new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+                         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost
+    });
+
     app.UseSerilogRequestLogging();
 
     if (!app.Environment.IsDevelopment())
@@ -186,6 +196,10 @@ try
     app.MapStaticAssets();
     app.MapRazorComponents<App>()
         .AddInteractiveServerRenderMode();
+
+    // Endpoint de salud para health checks externos (UptimeRobot, Render, etc.)
+    // Responde 200 a cualquier método HTTP. Sin lógica pesada, solo "estoy vivo".
+    app.MapMethods("/health", new[] { "GET", "HEAD" }, () => Results.Ok("OK"));
 
     app.MapPost("/api/login", async (HttpContext ctx, SignInManager<ApplicationUser> signIn, UserManager<ApplicationUser> users) =>
     {
