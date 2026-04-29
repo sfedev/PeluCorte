@@ -1,0 +1,38 @@
+# Build artifacts (se compilan dentro del contenedor)
+**/bin
+**/obj
+
+# IDE
+**/.vs
+**/.vscode
+**/.idea
+**/*.user
+**/*.suo
+
+# Git
+.git
+.github
+.gitignore
+.gitattributes
+
+# Secretos (NUNCA llegan al contenedor — se pasan como env vars en Render)
+.env
+.env.*
+!.env.example
+
+# Tests (no se ejecutan en producción)
+tests
+
+# Logs y datos locales generados en dev
+**/logs
+keys
+Data/*.json
+
+# Docs y solución
+README.md
+*.md
+PeluCorte.sln
+
+# Docker config (no necesita copiarse a sí misma)
+Dockerfile
+.dockerignore
