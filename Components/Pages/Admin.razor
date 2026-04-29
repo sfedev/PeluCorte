@@ -1,0 +1,560 @@
+@page "/admin"
+@attribute [Authorize(Policy = "EsDueno")]
+@rendermode InteractiveServer
+@inject CitaService CitaService
+@inject PeluqueroService PeluqueroService
+@inject PeluqueriaService PeluqueriaService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+
+<PageTitle>PeluCorte · Mi peluquería</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="pc-empty"><div class="spinner-border text-primary"></div></div>
+}
+else if (peluqueria is null)
+{
+    <div class="pc-empty">
+        <i class="bi bi-shop"></i>
+        <p class="mb-0">No tienes una peluquería asociada o aún no ha sido aprobada.</p>
+    </div>
+}
+else
+{
+    <div class="pc-admin-header d-flex flex-wrap align-items-center gap-3">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-gear-fill me-2" style="color: var(--pc-primary);"></i>@peluqueria.Nombre</h2>
+            <p class="text-muted mb-0 small"><i class="bi bi-link-45deg me-1"></i>URL pública: <a href="/p/@peluqueria.Slug" target="_blank">/p/@peluqueria.Slug</a></p>
+        </div>
+        <div class="ms-auto small text-muted">
+            <i class="bi bi-clock me-1"></i>@peluqueria.HoraApertura.ToString("HH\\:mm") – @peluqueria.HoraCierre.ToString("HH\\:mm")
+        </div>
+    </div>
+
+    <div class="pc-admin-quick">
+        <a href="/admin/perfil" class="pc-quick-link"><i class="bi bi-pencil-square"></i><span>Editar perfil</span></a>
+        <a href="/admin/servicios" class="pc-quick-link"><i class="bi bi-tag"></i><span>Servicios</span></a>
+        <a href="/admin/bloqueos" class="pc-quick-link"><i class="bi bi-calendar-x"></i><span>Bloqueos</span></a>
+        <a href="/admin/estadisticas" class="pc-quick-link"><i class="bi bi-bar-chart"></i><span>Estadísticas</span></a>
+        <a href="/admin/historico" class="pc-quick-link"><i class="bi bi-archive"></i><span>Histórico</span></a>
+        <a href="/cambiar-password" class="pc-quick-link"><i class="bi bi-shield-lock"></i><span>Contraseña</span></a>
+    </div>
+
+    <div class="card pc-card mb-4">
+        <div class="card-header pc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <h5><i class="bi bi-people-fill me-2" style="color: var(--pc-primary);"></i>Peluqueros</h5>
+            <span class="text-muted small">@peluqueros.Count en plantilla</span>
+        </div>
+        <div class="card-body">
+            @if (!duenoYaEsPeluquero)
+            {
+                <div class="alert alert-info py-2 d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                    <span class="small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        ¿Tú también cortas pelo? Añádete como peluquero/a usando tu cuenta actual, sin crear otra.
+                    </span>
+                    <button class="btn btn-sm pc-btn-primary" @onclick="AnyadirmeComoPeluquero" disabled="@anyadiendoDueno">
+                        @if (anyadiendoDueno) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        else { <i class="bi bi-person-plus me-1"></i> }
+                        <span>Añadirme</span>
+                    </button>
+                </div>
+            }
+
+            <div class="pc-add-pelu mb-4">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="pc-form-label">Nombre</label>
+                        <input class="form-control pc-form-control" placeholder="Nombre del peluquero/a"
+                               @bind="nombreNuevoPelu" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="conLogin"
+                                   checked="@conLoginNuevo" @onchange="OnToggleConLogin" />
+                            <label class="form-check-label" for="conLogin">Crear cuenta para que pueda iniciar sesión</label>
+                        </div>
+                    </div>
+
+                    @if (conLoginNuevo)
+                    {
+                        <div class="col-md-6">
+                            <label class="pc-form-label">Email del peluquero/a</label>
+                            <input type="email" class="form-control pc-form-control"
+                                   placeholder="ana@ejemplo.com" @bind="emailNuevoPelu" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="pc-form-label">Contraseña</label>
+                            <input type="text" class="form-control pc-form-control"
+                                   placeholder="Mín. 8, mayús, minús, número" @bind="passwordNuevoPelu" />
+                            <small class="text-muted">Anótala y entrégasela al peluquero/a.</small>
+                        </div>
+                    }
+
+                    <div class="col-12">
+                        <button class="btn pc-btn-primary" @onclick="CrearPeluquero" disabled="@(string.IsNullOrWhiteSpace(nombreNuevoPelu) || creandoPelu)">
+                            @if (creandoPelu) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            else { <i class="bi bi-plus-lg me-1"></i> }
+                            <span>Añadir al equipo</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @if (peluqueros.Count == 0)
+            {
+                <div class="pc-empty"><i class="bi bi-person-plus"></i><p class="mb-0">Aún no hay peluqueros.</p></div>
+            }
+            else
+            {
+                <div class="pc-pelu-list">
+                    @foreach (var p in peluqueros)
+                    {
+                        var citasCount = todasCitas.Count(c => c.PeluqueroId == p.Id);
+                        <div class="pc-pelu-card" style="border-left: 4px solid @p.Color;">
+                            <div class="pc-pelu-avatar" style="background: @p.Color;">@InicialesPelu(p.Nombre)</div>
+                            <div class="pc-pelu-body">
+                                <div class="pc-pelu-nombre">
+                                    @p.Nombre
+                                    @if (p.UserId is not null)
+                                    {
+                                        <i class="bi bi-key-fill ms-1" style="color: var(--pc-primary); font-size: 0.8rem;" title="Tiene login"></i>
+                                    }
+                                </div>
+                                <div class="pc-pelu-meta">
+                                    <i class="bi bi-calendar-check me-1"></i>@citasCount citas
+                                    @if (p.User is not null)
+                                    {
+                                        <span class="ms-2"><i class="bi bi-envelope me-1"></i>@p.User.Email</span>
+                                    }
+                                </div>
+                            </div>
+                            @if (eliminandoPeluqueroId == p.Id)
+                            {
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarEliminarPeluquero(p.Id)"><i class="bi bi-check-lg"></i></button>
+                                    <button class="btn btn-sm btn-light" @onclick="() => eliminandoPeluqueroId = null"><i class="bi bi-x-lg"></i></button>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="pc-btn-eliminar" @onclick="() => eliminandoPeluqueroId = p.Id"><i class="bi bi-trash"></i></button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card pc-card mb-4">
+        <div class="card-header pc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <h5><i class="bi bi-calendar3 me-2" style="color: var(--pc-primary);"></i>Agenda del @FormatearDiaCompleto(fechaSeleccionada)</h5>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-light" @onclick="DiaAnterior"><i class="bi bi-chevron-left"></i></button>
+                <button class="btn btn-sm btn-light" @onclick="IrAHoy">Hoy</button>
+                <button class="btn btn-sm btn-light" @onclick="DiaSiguiente"><i class="bi bi-chevron-right"></i></button>
+            </div>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                <i class="bi bi-info-circle me-1"></i>
+                Arrastra una cita a un hueco libre para moverla. Haz clic en una cita para editarla.
+            </p>
+
+            @if (peluqueros.Count == 0)
+            {
+                <div class="pc-empty"><i class="bi bi-people"></i><p class="mb-0">Añade un peluquero para gestionar la agenda.</p></div>
+            }
+            else
+            {
+                <div class="pc-grid-wrap">
+                    <table class="pc-grid">
+                        <thead>
+                            <tr>
+                                <th class="pc-grid-hora-head">Hora</th>
+                                @foreach (var p in peluqueros)
+                                {
+                                    <th class="pc-grid-pelu-head" style="border-bottom-color: @p.Color;">
+                                        <span class="pc-pelu-dot" style="background: @p.Color;"></span>@p.Nombre
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var hora in horasDisponibles)
+                            {
+                                <tr>
+                                    <td class="pc-grid-hora">@hora.ToString("HH\\:mm")</td>
+                                    @foreach (var p in peluqueros)
+                                    {
+                                        var cita = citasDelDia.FirstOrDefault(c => c.Hora == hora && c.PeluqueroId == p.Id);
+                                        var clave = $"{p.Id}|{hora}";
+                                        var hover = celdaHover == clave;
+                                        <td class="pc-grid-cell @(hover && cita is null ? "drop-hover" : "")"
+                                            @ondragover:preventDefault="true"
+                                            @ondragenter="() => celdaHover = clave"
+                                            @ondragleave="() => { if (celdaHover == clave) celdaHover = null; }"
+                                            @ondrop="() => SoltarEnCelda(p.Id, hora)">
+                                            @if (cita is not null)
+                                            {
+                                                <div class="pc-cita-card"
+                                                     draggable="true"
+                                                     @ondragstart="() => citaArrastrandoId = cita.Id"
+                                                     @ondragend="() => { citaArrastrandoId = null; celdaHover = null; }"
+                                                     @onclick="() => AbrirEdicion(cita)"
+                                                     style="border-left: 4px solid @p.Color;">
+                                                    <div class="pc-cita-nombre">@cita.Nombre</div>
+                                                    <div class="pc-cita-tel"><i class="bi bi-telephone me-1"></i>@cita.Telefono</div>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <button class="pc-cell-add" @onclick="() => AbrirNueva(p.Id, hora)"><i class="bi bi-plus"></i></button>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (citaEnEdicion is not null)
+    {
+        <div class="pc-modal-backdrop" @onclick="CerrarEdicion"></div>
+        <div class="pc-modal">
+            <div class="pc-modal-header">
+                <h5 class="mb-0">
+                    <i class="bi @(esNuevaCita ? "bi-plus-circle" : "bi-pencil-square") me-2" style="color: var(--pc-primary);"></i>
+                    @(esNuevaCita ? "Nueva cita" : "Editar cita")
+                </h5>
+                <button class="pc-modal-close" @onclick="CerrarEdicion"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="pc-modal-body">
+                <div class="mb-3">
+                    <label class="pc-form-label">Nombre del cliente</label>
+                    <input class="form-control pc-form-control" @bind="citaEnEdicion.Nombre" />
+                </div>
+                <div class="mb-3">
+                    <label class="pc-form-label">Teléfono</label>
+                    <input class="form-control pc-form-control" @bind="citaEnEdicion.Telefono"
+                           inputmode="tel" autocomplete="tel" />
+                </div>
+                <div class="mb-3">
+                    <label class="pc-form-label">Email <span class="text-muted small">(opcional, para avisar al cliente si cambias la cita)</span></label>
+                    <input type="email" class="form-control pc-form-control" @bind="citaEnEdicion.Email" placeholder="cliente@email.com" />
+                </div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="pc-form-label">Peluquero/a</label>
+                        <select class="form-select pc-form-control"
+                                value="@citaEnEdicion.PeluqueroId"
+                                @onchange="OnCambiarPeluEditor">
+                            @foreach (var p in peluqueros)
+                            {
+                                <option value="@p.Id">@p.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-7">
+                        <label class="pc-form-label">Día</label>
+                        <input type="date" class="form-control pc-form-control"
+                               value="@citaEnEdicion.Fecha.ToString("yyyy-MM-dd")"
+                               @onchange="OnCambiarFechaEditor" />
+                    </div>
+                    <div class="col-5">
+                        <label class="pc-form-label">Hora</label>
+                        <select class="form-select pc-form-control"
+                                value="@citaEnEdicion.Hora.ToString("HH\\:mm")"
+                                @onchange="OnCambiarHoraEditor">
+                            @foreach (var h in horasDisponibles)
+                            {
+                                <option value="@h.ToString("HH\\:mm")">@h.ToString("HH\\:mm")</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="pc-modal-footer">
+                @if (!esNuevaCita)
+                {
+                    <button class="btn btn-outline-danger me-auto" @onclick="EliminarCitaEnEdicion"><i class="bi bi-trash me-1"></i>Eliminar</button>
+                }
+                <button class="btn btn-light" @onclick="CerrarEdicion">Cancelar</button>
+                <button class="btn pc-btn-primary" @onclick="GuardarEdicion"><i class="bi bi-check2 me-1"></i>Guardar</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private Peluqueria? peluqueria;
+    private List<Peluquero> peluqueros = new();
+    private List<Cita> todasCitas = new();
+    private List<Cita> citasDelDia = new();
+    private List<TimeOnly> horasDisponibles = new();
+
+    private DateOnly fechaSeleccionada = DateOnly.FromDateTime(DateTime.Today);
+    private string nombreNuevoPelu = string.Empty;
+    private string emailNuevoPelu = string.Empty;
+    private string passwordNuevoPelu = string.Empty;
+    private bool conLoginNuevo = false;
+    private bool creandoPelu = false;
+    private Guid? eliminandoPeluqueroId;
+
+    private Guid? citaArrastrandoId;
+    private string? celdaHover;
+
+    private Cita? citaEnEdicion;
+    private bool esNuevaCita;
+
+    private bool cargando = true;
+    private string? duenoUserId;
+    private string duenoNombre = string.Empty;
+    private bool duenoYaEsPeluquero = false;
+    private bool anyadiendoDueno = false;
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    private async Task AnyadirmeComoPeluquero()
+    {
+        if (peluqueria is null || duenoUserId is null) return;
+        anyadiendoDueno = true;
+        var nombre = string.IsNullOrWhiteSpace(duenoNombre) ? "Yo" : duenoNombre;
+        var (ok, error) = await PeluqueroService.CrearComoDuenoAsync(peluqueria.Id, duenoUserId, nombre);
+        if (!ok)
+        {
+            anyadiendoDueno = false;
+            await MostrarMensaje(error ?? "No se pudo añadir.", false);
+            return;
+        }
+        // Forzamos refresh de la cookie de sesión para que el rol Empleado
+        // aparezca al instante en la navbar y permita /mi-agenda.
+        Nav.NavigateTo("/refrescar-sesion?volver=/admin", forceLoad: true);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(auth.User);
+        if (userId is null) { cargando = false; return; }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user?.PeluqueriaId is null) { cargando = false; return; }
+
+        duenoUserId = userId;
+        duenoNombre = user.NombreCompleto;
+        peluqueria = await PeluqueriaService.ObtenerPorIdAsync(user.PeluqueriaId.Value);
+        if (peluqueria is null || peluqueria.Estado != EstadoSolicitud.Aprobada)
+        {
+            peluqueria = null;
+            cargando = false;
+            return;
+        }
+
+        horasDisponibles = GenerarHoras(peluqueria.HoraApertura, peluqueria.HoraCierre);
+        await Recargar();
+        cargando = false;
+    }
+
+    private async Task Recargar()
+    {
+        if (peluqueria is null) return;
+        peluqueros = await PeluqueroService.ObtenerPorPeluqueriaAsync(peluqueria.Id);
+        todasCitas = await CitaService.ObtenerPorPeluqueriaAsync(peluqueria.Id);
+        citasDelDia = todasCitas.Where(c => c.Fecha == fechaSeleccionada).ToList();
+        duenoYaEsPeluquero = duenoUserId is not null && peluqueros.Any(p => p.UserId == duenoUserId);
+    }
+
+    private static List<TimeOnly> GenerarHoras(TimeOnly apertura, TimeOnly cierre)
+    {
+        var lista = new List<TimeOnly>();
+        var actual = apertura;
+        while (actual <= cierre) { lista.Add(actual); actual = actual.AddMinutes(30); }
+        return lista;
+    }
+
+    private async Task CrearPeluquero()
+    {
+        if (peluqueria is null || string.IsNullOrWhiteSpace(nombreNuevoPelu)) return;
+
+        creandoPelu = true;
+        var email = conLoginNuevo ? emailNuevoPelu : null;
+        var password = conLoginNuevo ? passwordNuevoPelu : null;
+
+        var (ok, error) = await PeluqueroService.CrearAsync(peluqueria.Id, nombreNuevoPelu, email, password);
+        creandoPelu = false;
+
+        if (!ok)
+        {
+            await MostrarMensaje(error ?? "No se pudo crear.", false);
+            return;
+        }
+
+        nombreNuevoPelu = string.Empty;
+        emailNuevoPelu = string.Empty;
+        passwordNuevoPelu = string.Empty;
+        conLoginNuevo = false;
+        await Recargar();
+        await MostrarMensaje(conLoginNuevo ? "Peluquero añadido con cuenta de acceso." : "Peluquero añadido.", true);
+    }
+
+    private void OnToggleConLogin(ChangeEventArgs e)
+    {
+        conLoginNuevo = e.Value is bool b && b;
+        if (!conLoginNuevo)
+        {
+            emailNuevoPelu = string.Empty;
+            passwordNuevoPelu = string.Empty;
+        }
+    }
+
+    private async Task ConfirmarEliminarPeluquero(Guid id)
+    {
+        if (peluqueria is null) return;
+        await PeluqueroService.EliminarAsync(id, peluqueria.Id);
+        eliminandoPeluqueroId = null;
+        await Recargar();
+        await MostrarMensaje("Peluquero eliminado.", true);
+    }
+
+    private async Task SoltarEnCelda(Guid peluId, TimeOnly hora)
+    {
+        celdaHover = null;
+        if (citaArrastrandoId is null) return;
+        var id = citaArrastrandoId.Value;
+        citaArrastrandoId = null;
+
+        var horario = peluqueria!.HorarioDe(fechaSeleccionada);
+        var (ok, error) = await CitaService.MoverAsync(id, fechaSeleccionada, hora, peluId, horario);
+        if (!ok) { await MostrarMensaje(error ?? "No se puede mover.", false); return; }
+        await Recargar();
+        await MostrarMensaje("Cita movida.", true);
+    }
+
+    private void AbrirEdicion(Cita cita)
+    {
+        if (citaArrastrandoId is not null) return;
+        citaEnEdicion = new Cita
+        {
+            Id = cita.Id,
+            Nombre = cita.Nombre,
+            Telefono = cita.Telefono,
+            Email = cita.Email,
+            Fecha = cita.Fecha,
+            Hora = cita.Hora,
+            DuracionMinutos = cita.DuracionMinutos,
+            PeluqueroId = cita.PeluqueroId,
+            PeluqueriaId = cita.PeluqueriaId,
+            ServicioId = cita.ServicioId,
+            CancelToken = cita.CancelToken
+        };
+        esNuevaCita = false;
+    }
+
+    private void AbrirNueva(Guid peluId, TimeOnly hora)
+    {
+        if (peluqueria is null) return;
+        citaEnEdicion = new Cita
+        {
+            Nombre = string.Empty,
+            Telefono = string.Empty,
+            Fecha = fechaSeleccionada,
+            Hora = hora,
+            PeluqueroId = peluId,
+            PeluqueriaId = peluqueria.Id
+        };
+        esNuevaCita = true;
+    }
+
+    private void CerrarEdicion() { citaEnEdicion = null; esNuevaCita = false; }
+
+    private void OnCambiarPeluEditor(ChangeEventArgs e)
+    {
+        if (citaEnEdicion is null) return;
+        if (Guid.TryParse(e.Value?.ToString(), out var g)) citaEnEdicion.PeluqueroId = g;
+    }
+
+    private void OnCambiarFechaEditor(ChangeEventArgs e)
+    {
+        if (citaEnEdicion is null) return;
+        if (DateOnly.TryParse(e.Value?.ToString(), out var f)) citaEnEdicion.Fecha = f;
+    }
+
+    private void OnCambiarHoraEditor(ChangeEventArgs e)
+    {
+        if (citaEnEdicion is null) return;
+        if (TimeOnly.TryParse(e.Value?.ToString(), out var h)) citaEnEdicion.Hora = h;
+    }
+
+    private async Task GuardarEdicion()
+    {
+        if (citaEnEdicion is null) return;
+        if (string.IsNullOrWhiteSpace(citaEnEdicion.Nombre)) { await MostrarMensaje("Nombre vacío.", false); return; }
+        if (string.IsNullOrWhiteSpace(citaEnEdicion.Telefono)) { await MostrarMensaje("Teléfono vacío.", false); return; }
+
+        var horario = peluqueria!.HorarioDe(citaEnEdicion.Fecha);
+        var (ok, error) = esNuevaCita
+            ? await CitaService.CrearAsync(citaEnEdicion, horario)
+            : await CitaService.ActualizarAsync(citaEnEdicion, horario);
+
+        if (!ok) { await MostrarMensaje(error ?? "No se pudo guardar.", false); return; }
+        await MostrarMensaje(esNuevaCita ? "Cita creada." : "Cita actualizada.", true);
+        CerrarEdicion();
+        await Recargar();
+    }
+
+    private async Task EliminarCitaEnEdicion()
+    {
+        if (citaEnEdicion is null || esNuevaCita || peluqueria is null) return;
+        await CitaService.EliminarAsync(citaEnEdicion.Id, peluqueria.Id);
+        CerrarEdicion();
+        await Recargar();
+        await MostrarMensaje("Cita eliminada.", true);
+    }
+
+    private async Task DiaAnterior() { fechaSeleccionada = fechaSeleccionada.AddDays(-1); await Recargar(); }
+    private async Task DiaSiguiente() { fechaSeleccionada = fechaSeleccionada.AddDays(1); await Recargar(); }
+    private async Task IrAHoy() { fechaSeleccionada = DateOnly.FromDateTime(DateTime.Today); await Recargar(); }
+
+    private async Task MostrarMensaje(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto;
+        mensajeOk = ok;
+        StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); }
+        catch (TaskCanceledException) { }
+    }
+
+    private static string InicialesPelu(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var partes = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (partes.Length == 1) return partes[0][..Math.Min(2, partes[0].Length)].ToUpper();
+        return $"{partes[0][0]}{partes[1][0]}".ToUpper();
+    }
+
+    private static string FormatearDiaCompleto(DateOnly fecha)
+    {
+        var dias = new[] { "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado" };
+        var meses = new[] { "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre" };
+        return $"{dias[(int)fecha.DayOfWeek]} {fecha.Day} de {meses[fecha.Month - 1]}";
+    }
+}

@@ -1,0 +1,409 @@
+@page "/super-admin/datos"
+@attribute [Authorize(Policy = "EsSuperAdmin")]
+@rendermode InteractiveServer
+@inject PeluqueriaService PeluqueriaService
+@inject UserManager<ApplicationUser> UserManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>PeluCorte · Gestión de datos</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+<div class="pc-admin-header d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-database-x me-2" style="color: var(--pc-danger);"></i>Gestión de datos</h2>
+        <p class="text-muted mb-0 small">
+            Eliminación directa de registros. <strong class="text-danger">Las acciones son irreversibles.</strong>
+        </p>
+    </div>
+    <a href="/super-admin" class="btn btn-light ms-auto"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+</div>
+
+<ul class="nav nav-tabs pc-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(tab == "peluquerias" ? "active" : "")" @onclick='() => CambiarTab("peluquerias")'>
+            <i class="bi bi-shop me-1"></i>Peluquerías
+            <span class="badge bg-secondary ms-1">@peluquerias.Count</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(tab == "usuarios" ? "active" : "")" @onclick='() => CambiarTab("usuarios")'>
+            <i class="bi bi-people me-1"></i>Usuarios
+            <span class="badge bg-secondary ms-1">@usuarios.Count</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(tab == "peluqueros" ? "active" : "")" @onclick='() => CambiarTab("peluqueros")'>
+            <i class="bi bi-scissors me-1"></i>Peluqueros
+            <span class="badge bg-secondary ms-1">@peluqueros.Count</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(tab == "citas" ? "active" : "")" @onclick='() => CambiarTab("citas")'>
+            <i class="bi bi-calendar me-1"></i>Citas
+            <span class="badge bg-secondary ms-1">@citas.Count</span>
+        </button>
+    </li>
+</ul>
+
+<div class="mb-3">
+    <input class="form-control pc-form-control" placeholder="Filtrar por texto..." @bind="filtro" @bind:event="oninput" />
+</div>
+
+<div class="card pc-card">
+    <div class="card-body p-0">
+        @if (cargando)
+        {
+            <div class="pc-empty"><div class="spinner-border text-primary"></div></div>
+        }
+        else if (tab == "peluquerias")
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Slug</th>
+                            <th>Estado</th>
+                            <th>Email</th>
+                            <th>Creada</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in PeluqueriasFiltradas())
+                        {
+                            <tr>
+                                <td><strong>@p.Nombre</strong></td>
+                                <td class="small text-muted">@p.Slug</td>
+                                <td><span class="pc-estado pc-estado-@p.Estado.ToString().ToLower()">@p.Estado</span></td>
+                                <td class="small">@p.EmailContacto</td>
+                                <td class="small text-muted">@p.CreadaEl.ToString("dd/MM/yyyy")</td>
+                                <td class="text-end">@AccionesEliminar("peluqueria", p.Id, p.Nombre)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (tab == "usuarios")
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Nombre</th>
+                            <th>Roles</th>
+                            <th>Peluquería</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in UsuariosFiltrados())
+                        {
+                            var rolesUsuario = rolesPorUsuario.GetValueOrDefault(u.Id, new List<string>());
+                            var nombrePelu = u.PeluqueriaId is not null
+                                ? peluquerias.FirstOrDefault(p => p.Id == u.PeluqueriaId)?.Nombre
+                                : null;
+                            <tr>
+                                <td><strong>@u.Email</strong></td>
+                                <td class="small">@u.NombreCompleto</td>
+                                <td>
+                                    @foreach (var r in rolesUsuario)
+                                    {
+                                        <span class="pc-rol-badge pc-rol-@r.ToLower()">@r</span>
+                                    }
+                                </td>
+                                <td class="small text-muted">@(nombrePelu ?? "—")</td>
+                                <td class="text-end">
+                                    @if (u.Id == currentUserId)
+                                    {
+                                        <span class="text-muted small">(tú)</span>
+                                    }
+                                    else
+                                    {
+                                        @AccionesEliminarStr("usuario", u.Id, u.Email ?? "(sin email)")
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (tab == "peluqueros")
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Peluquería</th>
+                            <th>Login</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in PeluquerosFiltrados())
+                        {
+                            var nombrePelu = peluquerias.FirstOrDefault(x => x.Id == p.PeluqueriaId)?.Nombre ?? "—";
+                            <tr>
+                                <td>
+                                    <span class="pc-pelu-dot" style="background:@p.Color;"></span>
+                                    <strong>@p.Nombre</strong>
+                                </td>
+                                <td class="small text-muted">@nombrePelu</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(p.UserId))
+                                    {
+                                        <i class="bi bi-key-fill" style="color: var(--pc-primary);" title="Tiene cuenta"></i>
+                                    }
+                                    else { <span class="text-muted small">—</span> }
+                                </td>
+                                <td class="text-end">@AccionesEliminar("peluquero", p.Id, p.Nombre)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (tab == "citas")
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Hora</th>
+                            <th>Cliente</th>
+                            <th>Teléfono</th>
+                            <th>Peluquero</th>
+                            <th>Peluquería</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in CitasFiltradas())
+                        {
+                            var pq = peluqueros.FirstOrDefault(p => p.Id == c.PeluqueroId)?.Nombre ?? "—";
+                            var pl = peluquerias.FirstOrDefault(p => p.Id == c.PeluqueriaId)?.Nombre ?? "—";
+                            <tr>
+                                <td>@c.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td>@c.Hora.ToString("HH\\:mm")</td>
+                                <td><strong>@c.Nombre</strong></td>
+                                <td class="small">@c.Telefono</td>
+                                <td class="small">@pq</td>
+                                <td class="small text-muted">@pl</td>
+                                <td class="text-end">@AccionesEliminar("cita", c.Id, $"{c.Nombre} - {c.Fecha:dd/MM} {c.Hora:HH\\:mm}")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string tab = "peluquerias";
+    private string filtro = string.Empty;
+    private bool cargando = true;
+
+    private List<Peluqueria> peluquerias = new();
+    private List<ApplicationUser> usuarios = new();
+    private List<Peluquero> peluqueros = new();
+    private List<Cita> citas = new();
+    private Dictionary<string, List<string>> rolesPorUsuario = new();
+
+    private string? confirmandoTipo;
+    private string? confirmandoId;
+    private string? currentUserId;
+
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        currentUserId = UserManager.GetUserId(auth.User);
+        await Recargar();
+    }
+
+    private async Task Recargar()
+    {
+        cargando = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        peluquerias = await db.Peluquerias.OrderByDescending(p => p.CreadaEl).Take(500).ToListAsync();
+        usuarios = await db.Set<ApplicationUser>().OrderBy(u => u.Email).Take(500).ToListAsync();
+        peluqueros = await db.Peluqueros.OrderBy(p => p.Nombre).Take(500).ToListAsync();
+        citas = await db.Citas
+            .OrderByDescending(c => c.Fecha).ThenByDescending(c => c.Hora)
+            .Take(500).ToListAsync();
+
+        // Cargar roles de cada usuario (en una sola query)
+        rolesPorUsuario.Clear();
+        var rolesQuery = await (
+            from ur in db.Set<Microsoft.AspNetCore.Identity.IdentityUserRole<string>>()
+            join r in db.Roles on ur.RoleId equals r.Id
+            select new { ur.UserId, RoleName = r.Name }
+        ).ToListAsync();
+
+        foreach (var grp in rolesQuery.GroupBy(x => x.UserId))
+            rolesPorUsuario[grp.Key] = grp.Select(x => x.RoleName ?? "").ToList();
+
+        cargando = false;
+    }
+
+    private void CambiarTab(string nuevo)
+    {
+        tab = nuevo;
+        filtro = string.Empty;
+        confirmandoTipo = null;
+        confirmandoId = null;
+    }
+
+    private IEnumerable<Peluqueria> PeluqueriasFiltradas() =>
+        string.IsNullOrWhiteSpace(filtro) ? peluquerias :
+        peluquerias.Where(p =>
+            p.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase) ||
+            p.Slug.Contains(filtro, StringComparison.OrdinalIgnoreCase) ||
+            (p.EmailContacto?.Contains(filtro, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private IEnumerable<ApplicationUser> UsuariosFiltrados() =>
+        string.IsNullOrWhiteSpace(filtro) ? usuarios :
+        usuarios.Where(u =>
+            (u.Email?.Contains(filtro, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (u.NombreCompleto?.Contains(filtro, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private IEnumerable<Peluquero> PeluquerosFiltrados() =>
+        string.IsNullOrWhiteSpace(filtro) ? peluqueros :
+        peluqueros.Where(p => p.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<Cita> CitasFiltradas() =>
+        string.IsNullOrWhiteSpace(filtro) ? citas :
+        citas.Where(c =>
+            c.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase) ||
+            c.Telefono.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+    private RenderFragment AccionesEliminar(string tipo, Guid id, string descripcion) =>
+        AccionesEliminarStr(tipo, id.ToString(), descripcion);
+
+    private RenderFragment AccionesEliminarStr(string tipo, string id, string descripcion) => __builder =>
+    {
+        if (confirmandoTipo == tipo && confirmandoId == id)
+        {
+            <div class="d-flex gap-1 justify-content-end">
+                <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(tipo, id)">
+                    <i class="bi bi-check-lg me-1"></i>Borrar
+                </button>
+                <button class="btn btn-sm btn-light" @onclick="CancelarConfirmacion">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        }
+        else
+        {
+            <button class="pc-btn-eliminar" @onclick="() => PedirConfirmacion(tipo, id)" title="Eliminar @descripcion">
+                <i class="bi bi-trash"></i>
+            </button>
+        }
+    };
+
+    private void PedirConfirmacion(string tipo, string id)
+    {
+        confirmandoTipo = tipo;
+        confirmandoId = id;
+    }
+
+    private void CancelarConfirmacion()
+    {
+        confirmandoTipo = null;
+        confirmandoId = null;
+    }
+
+    private async Task Eliminar(string tipo, string id)
+    {
+        confirmandoTipo = null;
+        confirmandoId = null;
+
+        try
+        {
+            switch (tipo)
+            {
+                case "peluqueria":
+                    await PeluqueriaService.CerrarYEliminarAsync(Guid.Parse(id));
+                    await Mostrar("Peluquería eliminada con todos sus datos asociados.", true);
+                    break;
+
+                case "usuario":
+                    if (id == currentUserId)
+                    {
+                        await Mostrar("No puedes borrarte a ti mismo.", false);
+                        return;
+                    }
+                    var user = await UserManager.FindByIdAsync(id);
+                    if (user is null) { await Mostrar("Usuario no encontrado.", false); return; }
+                    var res = await UserManager.DeleteAsync(user);
+                    if (!res.Succeeded)
+                    { await Mostrar(string.Join(" ", res.Errors.Select(e => e.Description)), false); return; }
+                    await Mostrar($"Usuario {user.Email} eliminado.", true);
+                    break;
+
+                case "peluquero":
+                    await using (var db = await DbFactory.CreateDbContextAsync())
+                    {
+                        var pq = await db.Peluqueros.FindAsync(Guid.Parse(id));
+                        if (pq is null) { await Mostrar("Peluquero no encontrado.", false); return; }
+                        var userIdLinked = pq.UserId;
+                        db.Peluqueros.Remove(pq);
+                        await db.SaveChangesAsync();
+
+                        // Si el user vinculado es solo Empleado (no Dueño), borrarlo también.
+                        if (!string.IsNullOrEmpty(userIdLinked))
+                        {
+                            var u = await UserManager.FindByIdAsync(userIdLinked);
+                            if (u is not null && !await UserManager.IsInRoleAsync(u, Roles.Dueno))
+                                await UserManager.DeleteAsync(u);
+                        }
+                    }
+                    await Mostrar("Peluquero eliminado.", true);
+                    break;
+
+                case "cita":
+                    await using (var db = await DbFactory.CreateDbContextAsync())
+                    {
+                        var c = await db.Citas.FindAsync(Guid.Parse(id));
+                        if (c is null) { await Mostrar("Cita no encontrada.", false); return; }
+                        db.Citas.Remove(c);
+                        await db.SaveChangesAsync();
+                    }
+                    await Mostrar("Cita eliminada.", true);
+                    break;
+            }
+
+            await Recargar();
+        }
+        catch (Exception ex)
+        {
+            await Mostrar($"Error: {ex.Message}", false);
+        }
+    }
+
+    private async Task Mostrar(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto; mensajeOk = ok; StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); } catch { }
+    }
+}

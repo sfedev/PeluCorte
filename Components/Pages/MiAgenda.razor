@@ -1,0 +1,188 @@
+@page "/mi-agenda"
+@attribute [Authorize(Roles = Roles.Empleado)]
+@rendermode InteractiveServer
+@inject CitaService CitaService
+@inject PeluqueroService PeluqueroService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>PeluCorte · Mi agenda</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="pc-empty"><div class="spinner-border text-primary"></div></div>
+}
+else if (peluquero is null)
+{
+    <div class="pc-empty">
+        <i class="bi bi-person-x"></i>
+        <p class="mb-0">Tu cuenta no está asociada a ningún peluquero. Contacta con tu peluquería.</p>
+    </div>
+}
+else
+{
+    <div class="pc-mi-hero" style="border-left: 6px solid @peluquero.Color;">
+        <div class="pc-mi-avatar" style="background: @peluquero.Color;">@InicialesPelu(peluquero.Nombre)</div>
+        <div class="flex-grow-1">
+            <h2 class="mb-1">Hola, @peluquero.Nombre</h2>
+            <div class="text-muted small"><i class="bi bi-shop me-1"></i>@(peluquero.Peluqueria?.Nombre ?? "")</div>
+            <div class="mt-1 d-flex flex-wrap gap-3">
+                <a href="/mi-agenda/perfil" class="small"><i class="bi bi-person-circle me-1"></i>Mi perfil</a>
+                <a href="/mi-agenda/bloqueos" class="small"><i class="bi bi-calendar-x me-1"></i>Mi disponibilidad</a>
+                <a href="/cambiar-password" class="small"><i class="bi bi-shield-lock me-1"></i>Cambiar contraseña</a>
+            </div>
+        </div>
+        @if (proximaCita is not null)
+        {
+            <div class="pc-proxima">
+                <div class="pc-proxima-label">Próxima cita</div>
+                <div class="pc-proxima-valor">
+                    @FormatearProxima(proximaCita)
+                </div>
+                <div class="pc-proxima-cliente">@proximaCita.Nombre</div>
+            </div>
+        }
+    </div>
+
+    <div class="card pc-card">
+        <div class="card-header pc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <h5><i class="bi bi-calendar3 me-2" style="color: var(--pc-primary);"></i>@FormatearDiaCompleto(fechaSeleccionada)</h5>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-light" @onclick="DiaAnterior"><i class="bi bi-chevron-left"></i></button>
+                <button class="btn btn-sm btn-light" @onclick="IrAHoy">Hoy</button>
+                <button class="btn btn-sm btn-light" @onclick="DiaSiguiente"><i class="bi bi-chevron-right"></i></button>
+            </div>
+        </div>
+        <div class="card-body p-3">
+            @if (citasDelDia.Count == 0)
+            {
+                <div class="pc-empty">
+                    <i class="bi bi-calendar-x"></i>
+                    <p class="mb-0">No tienes citas para este día.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var cita in citasDelDia)
+                {
+                    <div class="pc-slot ocupada">
+                        <span class="pc-slot-hora">@cita.Hora.ToString("HH\\:mm")</span>
+                        <div class="pc-slot-info">
+                            <div class="pc-slot-nombre">@cita.Nombre</div>
+                            <div class="pc-slot-tel">
+                                <a href="tel:@cita.Telefono" class="text-muted text-decoration-none">
+                                    <i class="bi bi-telephone me-1"></i>@cita.Telefono
+                                </a>
+                            </div>
+                        </div>
+                        @if (cancelandoId == cita.Id)
+                        {
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarCancelar(cita.Id)">Cancelar cita</button>
+                                <button class="btn btn-sm btn-light" @onclick="() => cancelandoId = null">No</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="pc-btn-eliminar" @onclick="() => cancelandoId = cita.Id" title="Cancelar cita">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private Peluquero? peluquero;
+    private DateOnly fechaSeleccionada = DateOnly.FromDateTime(DateTime.Today);
+    private List<Cita> citasDelDia = new();
+    private Cita? proximaCita;
+    private Guid? cancelandoId;
+    private bool cargando = true;
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(auth.User);
+        if (userId is null) { cargando = false; return; }
+
+        peluquero = await PeluqueroService.ObtenerPorUserIdAsync(userId);
+        if (peluquero is null) { cargando = false; return; }
+
+        await Recargar();
+        cargando = false;
+    }
+
+    private async Task Recargar()
+    {
+        if (peluquero is null) return;
+        citasDelDia = await CitaService.ObtenerPorPeluqueroAsync(peluquero.Id, fechaSeleccionada);
+        proximaCita = await CitaService.ProximaCitaPeluqueroAsync(peluquero.Id, DateTime.UtcNow);
+    }
+
+    private async Task ConfirmarCancelar(Guid citaId)
+    {
+        if (peluquero is null) return;
+        var ok = await CitaService.EliminarSiPertenecePeluqueroAsync(citaId, peluquero.Id);
+        cancelandoId = null;
+        if (!ok)
+        {
+            await MostrarMensaje("No se pudo cancelar.", false);
+            return;
+        }
+        await Recargar();
+        await MostrarMensaje("Cita cancelada.", true);
+    }
+
+    private async Task DiaAnterior() { fechaSeleccionada = fechaSeleccionada.AddDays(-1); await Recargar(); }
+    private async Task DiaSiguiente() { fechaSeleccionada = fechaSeleccionada.AddDays(1); await Recargar(); }
+    private async Task IrAHoy() { fechaSeleccionada = DateOnly.FromDateTime(DateTime.Today); await Recargar(); }
+
+    private async Task MostrarMensaje(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto;
+        mensajeOk = ok;
+        StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); }
+        catch (TaskCanceledException) { }
+    }
+
+    private static string InicialesPelu(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var partes = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (partes.Length == 1) return partes[0][..Math.Min(2, partes[0].Length)].ToUpper();
+        return $"{partes[0][0]}{partes[1][0]}".ToUpper();
+    }
+
+    private static string FormatearDiaCompleto(DateOnly fecha)
+    {
+        var dias = new[] { "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado" };
+        var meses = new[] { "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre" };
+        return $"{dias[(int)fecha.DayOfWeek]} {fecha.Day} de {meses[fecha.Month - 1]}";
+    }
+
+    private static string FormatearProxima(Cita c)
+    {
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        if (c.Fecha == hoy) return $"Hoy · {c.Hora:HH\\:mm}";
+        if (c.Fecha == hoy.AddDays(1)) return $"Mañana · {c.Hora:HH\\:mm}";
+        return $"{c.Fecha:dd/MM} · {c.Hora:HH\\:mm}";
+    }
+}

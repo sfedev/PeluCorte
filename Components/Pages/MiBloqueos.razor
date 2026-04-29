@@ -1,0 +1,249 @@
+@page "/mi-agenda/bloqueos"
+@attribute [Authorize(Roles = Roles.Empleado)]
+@rendermode InteractiveServer
+@inject BloqueoService BloqueoService
+@inject PeluqueroService PeluqueroService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>PeluCorte · Mi disponibilidad</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+<div class="pc-admin-header d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-calendar-x me-2" style="color: var(--pc-primary);"></i>Mi disponibilidad</h2>
+        <p class="text-muted mb-0 small"><a href="/mi-agenda"><i class="bi bi-arrow-left me-1"></i>Volver a mi agenda</a></p>
+    </div>
+</div>
+
+@if (cargando) { <div class="pc-empty"><div class="spinner-border text-primary"></div></div> }
+else if (peluquero is null)
+{
+    <div class="pc-empty"><i class="bi bi-person-x"></i><p class="mb-0">Tu cuenta no está asociada a ningún peluquero.</p></div>
+}
+else
+{
+    <div class="card pc-card mb-4">
+        <div class="card-header pc-card-header">
+            <h5><i class="bi bi-plus-circle me-2" style="color: var(--pc-primary);"></i>Marcarme como no disponible</h5>
+        </div>
+        <div class="card-body p-4">
+            <p class="text-muted small mb-3">
+                <i class="bi bi-info-circle me-1"></i>
+                Mientras esté el bloqueo activo, los clientes no podrán reservar contigo en esas horas.
+            </p>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="pc-form-label">Tipo</label>
+                    <select class="form-select pc-form-control" @bind="tipo">
+                        <option value="dia">Día completo (libre)</option>
+                        <option value="rango">Rango de horas (ej. comida)</option>
+                        <option value="vacaciones">Varios días (vacaciones)</option>
+                    </select>
+                </div>
+
+                @if (tipo == "dia")
+                {
+                    <div class="col-md-6">
+                        <label class="pc-form-label">Día</label>
+                        <input type="date" class="form-control pc-form-control" @bind="diaSel" />
+                    </div>
+                }
+                else if (tipo == "rango")
+                {
+                    <div class="col-md-2">
+                        <label class="pc-form-label">Día</label>
+                        <input type="date" class="form-control pc-form-control" @bind="diaSel" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="pc-form-label">Desde</label>
+                        <input class="form-control pc-form-control" placeholder="13:00" @bind="horaInicio" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="pc-form-label">Hasta</label>
+                        <input class="form-control pc-form-control" placeholder="14:00" @bind="horaFin" />
+                    </div>
+                }
+                else
+                {
+                    <div class="col-md-3">
+                        <label class="pc-form-label">Desde</label>
+                        <input type="date" class="form-control pc-form-control" @bind="vacInicio" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="pc-form-label">Hasta (incluido)</label>
+                        <input type="date" class="form-control pc-form-control" @bind="vacFin" />
+                    </div>
+                }
+
+                <div class="col-12">
+                    <label class="pc-form-label">Motivo (opcional)</label>
+                    <input class="form-control pc-form-control" @bind="motivo" placeholder="Vacaciones, médico, comida..." />
+                </div>
+
+                <div class="col-12">
+                    <button class="btn pc-btn-primary" @onclick="Crear" disabled="@guardando">
+                        @if (guardando) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        else { <i class="bi bi-check2 me-1"></i> }
+                        <span>Bloquear</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card pc-card">
+        <div class="card-header pc-card-header"><h5><i class="bi bi-list me-2" style="color: var(--pc-primary);"></i>Mis bloqueos activos</h5></div>
+        <div class="card-body p-3">
+            @if (bloqueos.Count == 0)
+            {
+                <div class="pc-empty"><i class="bi bi-check2-circle"></i><p class="mb-0">No tienes bloqueos activos.</p></div>
+            }
+            else
+            {
+                @foreach (var b in bloqueos)
+                {
+                    <div class="pc-slot ocupada">
+                        <div class="pc-slot-info">
+                            <div class="pc-slot-nombre">@FormatearBloqueo(b)</div>
+                            @if (!string.IsNullOrEmpty(b.Motivo))
+                            {
+                                <div class="pc-slot-tel">@b.Motivo</div>
+                            }
+                        </div>
+                        @if (eliminandoId == b.Id)
+                        {
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(b.Id)">Quitar</button>
+                                <button class="btn btn-sm btn-light" @onclick="() => eliminandoId = null">No</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="pc-btn-eliminar" @onclick="() => eliminandoId = b.Id" title="Quitar bloqueo">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private Peluquero? peluquero;
+    private List<BloqueoHorario> bloqueos = new();
+
+    private string tipo = "dia";
+    private DateOnly diaSel = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly vacInicio = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly vacFin = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+    private string horaInicio = "13:00";
+    private string horaFin = "14:00";
+    private string motivo = string.Empty;
+
+    private Guid? eliminandoId;
+    private bool cargando = true;
+    private bool guardando = false;
+
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(auth.User);
+        if (userId is null) { cargando = false; return; }
+
+        peluquero = await PeluqueroService.ObtenerPorUserIdAsync(userId);
+        if (peluquero is null) { cargando = false; return; }
+
+        await Recargar();
+        cargando = false;
+    }
+
+    private async Task Recargar()
+    {
+        if (peluquero is null) return;
+        bloqueos = await BloqueoService.ObtenerPorPeluqueroAsync(peluquero.Id);
+    }
+
+    private async Task Crear()
+    {
+        if (peluquero is null) return;
+        guardando = true;
+        try
+        {
+            DateTime ini, fin;
+            if (tipo == "dia")
+            {
+                ini = diaSel.ToDateTime(TimeOnly.MinValue);
+                fin = diaSel.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            }
+            else if (tipo == "rango")
+            {
+                if (!TimeOnly.TryParse(horaInicio, out var hi) || !TimeOnly.TryParse(horaFin, out var hf))
+                { await Mostrar("Horas no válidas.", false); return; }
+                if (hf <= hi) { await Mostrar("La hora de fin debe ser posterior.", false); return; }
+                ini = diaSel.ToDateTime(hi);
+                fin = diaSel.ToDateTime(hf);
+            }
+            else
+            {
+                if (vacFin < vacInicio) { await Mostrar("Fechas inválidas.", false); return; }
+                ini = vacInicio.ToDateTime(TimeOnly.MinValue);
+                fin = vacFin.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            }
+
+            var ok = await BloqueoService.CrearAsync(peluquero.Id, ini, fin, motivo);
+            if (!ok) { await Mostrar("Error al crear el bloqueo.", false); return; }
+
+            motivo = string.Empty;
+            await Recargar();
+            await Mostrar("Te has marcado como no disponible.", true);
+        }
+        finally { guardando = false; }
+    }
+
+    private async Task Eliminar(Guid id)
+    {
+        if (peluquero is null) return;
+        var ok = await BloqueoService.EliminarSiPertenecePeluqueroAsync(id, peluquero.Id);
+        eliminandoId = null;
+        if (!ok) { await Mostrar("No se ha podido eliminar.", false); return; }
+        await Recargar();
+        await Mostrar("Bloqueo eliminado. Vuelves a estar disponible.", true);
+    }
+
+    private async Task Mostrar(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto; mensajeOk = ok; StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); } catch { }
+    }
+
+    private static string FormatearBloqueo(BloqueoHorario b)
+    {
+        var ini = b.Inicio; var fin = b.Fin;
+        if (ini.TimeOfDay == TimeSpan.Zero && fin.TimeOfDay == TimeSpan.Zero)
+        {
+            var dias = (fin.Date - ini.Date).Days;
+            if (dias == 1) return $"{ini:dd/MM} (día completo)";
+            return $"{ini:dd/MM} → {fin.AddDays(-1):dd/MM} ({dias} días)";
+        }
+        if (ini.Date == fin.Date)
+            return $"{ini:dd/MM} de {ini:HH\\:mm} a {fin:HH\\:mm}";
+        return $"{ini:dd/MM HH\\:mm} → {fin:dd/MM HH\\:mm}";
+    }
+}

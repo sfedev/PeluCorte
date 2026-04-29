@@ -1,0 +1,25 @@
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Datos locales (legado de la versión JSON)
+Data/*.json
+
+# Build
+bin/
+obj/
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Logs
+*.log
+logs/
+
+# Data Protection keys (no commitear nunca)
+keys/

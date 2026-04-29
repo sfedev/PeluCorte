@@ -1,0 +1,101 @@
+@page "/mi-agenda/perfil"
+@attribute [Authorize(Roles = Roles.Empleado)]
+@rendermode InteractiveServer
+@inject PeluqueroService PeluqueroService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>PeluCorte · Mi perfil</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+<div class="pc-admin-header d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-person-circle me-2" style="color: var(--pc-primary);"></i>Mi perfil</h2>
+        <p class="text-muted mb-0 small"><a href="/mi-agenda"><i class="bi bi-arrow-left me-1"></i>Volver a mi agenda</a></p>
+    </div>
+</div>
+
+@if (cargando) { <div class="pc-empty"><div class="spinner-border text-primary"></div></div> }
+else if (peluquero is null) { <div class="pc-empty"><i class="bi bi-person-x"></i><p class="mb-0">No se encuentra tu ficha.</p></div> }
+else
+{
+    <div class="card pc-card mb-4">
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <label class="pc-form-label">Nombre</label>
+                    <input class="form-control pc-form-control" @bind="nombre" />
+                </div>
+                <div class="col-md-5">
+                    <label class="pc-form-label">Color</label>
+                    <div class="pc-color-grid">
+                        @foreach (var c in colores)
+                        {
+                            var sel = color == c;
+                            <button type="button" class="pc-color-btn @(sel ? "active" : "")"
+                                    style="background: @c;" @onclick="() => color = c"></button>
+                        }
+                    </div>
+                </div>
+            </div>
+            <button class="btn pc-btn-primary mt-4" @onclick="Guardar" disabled="@guardando">
+                @if (guardando) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                else { <i class="bi bi-check2-circle me-1"></i> }
+                <span>Guardar</span>
+            </button>
+        </div>
+    </div>
+
+    <a href="/cambiar-password" class="btn btn-light"><i class="bi bi-shield-lock me-1"></i>Cambiar contraseña</a>
+}
+
+@code {
+    private Peluquero? peluquero;
+    private string nombre = string.Empty;
+    private string color = "#6c4cd9";
+    private readonly string[] colores = { "#6c4cd9", "#ff6fae", "#2bb673", "#ff9f43", "#26b9d6", "#e25563", "#7d5fff", "#fdcb6e" };
+    private bool cargando = true;
+    private bool guardando = false;
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(auth.User);
+        if (userId is null) { cargando = false; return; }
+        peluquero = await PeluqueroService.ObtenerPorUserIdAsync(userId);
+        if (peluquero is not null)
+        {
+            nombre = peluquero.Nombre;
+            color = peluquero.Color;
+        }
+        cargando = false;
+    }
+
+    private async Task Guardar()
+    {
+        if (peluquero is null) return;
+        if (string.IsNullOrWhiteSpace(nombre) || nombre.Trim().Length < 2) { await Mostrar("Nombre demasiado corto.", false); return; }
+        guardando = true;
+        await PeluqueroService.ActualizarAsync(peluquero.Id, nombre, color);
+        guardando = false;
+        await Mostrar("Perfil actualizado.", true);
+    }
+
+    private async Task Mostrar(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto; mensajeOk = ok; StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); } catch { }
+    }
+}

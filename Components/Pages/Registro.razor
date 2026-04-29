@@ -1,0 +1,349 @@
+@page "/registro"
+@rendermode InteractiveServer
+@inject PeluqueriaService PeluqueriaService
+@inject EmailService EmailService
+@inject GeoService GeoService
+@inject VerificadorPeluqueriaService Verificador
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Nav
+
+<PageTitle>PeluCorte · Alta de peluquería</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card pc-card">
+            <div class="card-body p-4">
+                <h3 class="mb-1"><i class="bi bi-shop me-2" style="color: var(--pc-primary);"></i>Solicitud de alta</h3>
+                <p class="text-muted small mb-4">Rellena los datos. Revisaremos tu solicitud y te enviaremos un email cuando sea aprobada. Es 100% gratuito.</p>
+
+                @if (mensaje is not null)
+                {
+                    <div class="alert @(mensajeOk ? "alert-success" : "alert-danger") py-2">
+                        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+                    </div>
+                }
+
+                <EditForm Model="form" OnValidSubmit="Enviar" FormName="formRegistro">
+                    <DataAnnotationsValidator />
+
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="pc-form-label">Nombre de la peluquería</label>
+                            <InputText class="form-control pc-form-control" @bind-Value="form.Nombre" />
+                            <ValidationMessage For="@(() => form.Nombre)" />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="pc-form-label">Teléfono</label>
+                            <InputText class="form-control pc-form-control" @bind-Value="form.Telefono"
+                                       inputmode="tel" autocomplete="tel" placeholder="612 345 678" />
+                            <ValidationMessage For="@(() => form.Telefono)" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="pc-form-label">Dirección completa</label>
+                            <InputText class="form-control pc-form-control" @bind-Value="form.Direccion" placeholder="Ej. Calle Mayor 12, Madrid" />
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-geo-alt me-1"></i>
+                                Localizamos tu peluquería automáticamente a partir de la dirección.
+                            </small>
+                            <ValidationMessage For="@(() => form.Direccion)" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="pc-form-label">URL de Google Maps <span class="text-muted">(opcional)</span></label>
+                            <InputText class="form-control pc-form-control" @bind-Value="form.GoogleMapsUrl"
+                                       placeholder="https://maps.google.com/..." />
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Si la pegas, los clientes podrán abrir tu negocio directamente en Google Maps.
+                            </small>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="pc-form-label">Horario semanal</label>
+                            <div class="pc-horario-tabla">
+                                @foreach (var item in form.Horarios)
+                                {
+                                    <div class="pc-horario-fila">
+                                        <label class="pc-horario-check">
+                                            <input type="checkbox" checked="@item.Abierto"
+                                                   @onchange="@(e => item.Abierto = (bool)(e.Value ?? false))" />
+                                            <span>@NombreDia(item.Dia)</span>
+                                        </label>
+                                        <input class="form-control form-control-sm pc-form-control" type="text"
+                                               @bind="item.Apertura" placeholder="09:00"
+                                               disabled="@(!item.Abierto)" />
+                                        <span class="text-muted">a</span>
+                                        <input class="form-control form-control-sm pc-form-control" type="text"
+                                               @bind="item.Cierre" placeholder="21:00"
+                                               disabled="@(!item.Abierto)" />
+                                    </div>
+                                }
+                            </div>
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Indica para cada día si abres y entre qué horas. Desmarca el día para cerrar.
+                            </small>
+                        </div>
+
+                        <div class="col-12"><hr/></div>
+
+                        <div class="col-md-6">
+                            <label class="pc-form-label">Email del dueño (login)</label>
+                            <InputText type="email" class="form-control pc-form-control" @bind-Value="form.Email" />
+                            <ValidationMessage For="@(() => form.Email)" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="pc-form-label">Tu nombre</label>
+                            <InputText class="form-control pc-form-control" @bind-Value="form.NombreCompleto" />
+                            <ValidationMessage For="@(() => form.NombreCompleto)" />
+                        </div>
+                        <div class="col-12">
+                            <label class="pc-form-label">Contraseña</label>
+                            <InputText type="password" class="form-control pc-form-control" @bind-Value="form.Password" />
+                            <small class="text-muted d-block mt-1">Mínimo 8 caracteres, con mayúscula, minúscula y número.</small>
+                            <ValidationMessage For="@(() => form.Password)" />
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn pc-btn-primary w-100 mt-4" disabled="@enviando">
+                        @if (enviando)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>@(estadoProgreso ?? "Enviando...")</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-send me-1"></i>
+                            <span>Enviar solicitud</span>
+                        }
+                    </button>
+                    @if (enviando)
+                    {
+                        <p class="text-center small text-muted mt-2 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>Esto puede tardar unos segundos. No cierres la ventana.
+                        </p>
+                    }
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private FormularioRegistro form = new();
+    private bool enviando = false;
+    private string? mensaje;
+    private bool mensajeOk;
+
+    private string? estadoProgreso;
+
+    private async Task Enviar()
+    {
+        mensaje = null;
+
+        // === Validaciones síncronas (rápidas) ===
+        var telefonoNorm = Validaciones.NormalizarTelefonoEs(form.Telefono);
+        if (telefonoNorm is null)
+        {
+            mensaje = "Teléfono no válido. Debe ser un número español (móvil o fijo, 9 dígitos empezando por 6, 7, 8 o 9).";
+            mensajeOk = false;
+            return;
+        }
+
+        if (!Validaciones.EsEmailValido(form.Email))
+        {
+            mensaje = "Email no válido.";
+            mensajeOk = false;
+            return;
+        }
+
+        // Validar y construir los HorarioDia
+        var horariosFinal = new List<HorarioDia>();
+        foreach (var item in form.Horarios)
+        {
+            if (!item.Abierto)
+            {
+                horariosFinal.Add(new HorarioDia { Dia = item.Dia, Abierto = false, Apertura = new(9, 0), Cierre = new(21, 0) });
+                continue;
+            }
+            if (!TimeOnly.TryParse(item.Apertura, out var hAp))
+            { mensaje = $"Hora de apertura no válida para {NombreDia(item.Dia)}."; mensajeOk = false; return; }
+            if (!TimeOnly.TryParse(item.Cierre, out var hCi))
+            { mensaje = $"Hora de cierre no válida para {NombreDia(item.Dia)}."; mensajeOk = false; return; }
+            if (hCi <= hAp)
+            { mensaje = $"El cierre debe ser posterior a la apertura ({NombreDia(item.Dia)})."; mensajeOk = false; return; }
+            horariosFinal.Add(new HorarioDia { Dia = item.Dia, Abierto = true, Apertura = hAp, Cierre = hCi });
+        }
+
+        if (!horariosFinal.Any(h => h.Abierto))
+        {
+            mensaje = "Debes abrir al menos un día.";
+            mensajeOk = false;
+            return;
+        }
+
+        // === Empieza el trabajo lento. Activamos spinner YA. ===
+        enviando = true;
+        estadoProgreso = "Localizando tu dirección...";
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            // Resolver coordenadas: primero desde URL de Google Maps (incluyendo URLs cortas
+            // como maps.app.goo.gl que requieren seguir el redirect), si no, geocodificar la dirección.
+            var coords = await GeoService.ResolverGoogleMapsUrlAsync(form.GoogleMapsUrl)
+                         ?? await GeoService.GeocodificarAsync(form.Direccion);
+
+            if (coords is null)
+            {
+                mensaje = "No hemos podido localizar tu dirección. Revísala o pega también un enlace de Google Maps.";
+                mensajeOk = false;
+                return;
+            }
+            var lat = coords.Value.lat;
+            var lng = coords.Value.lng;
+
+            estadoProgreso = "Comprobando disponibilidad del email...";
+            StateHasChanged();
+            await Task.Yield();
+            var existente = await UserManager.FindByEmailAsync(form.Email);
+            if (existente is not null)
+            {
+                mensaje = "Ya existe una cuenta con ese email.";
+                mensajeOk = false;
+                return;
+            }
+
+            var slug = await PeluqueriaService.GenerarSlugUnicoAsync(form.Nombre);
+            var pelu = new Peluqueria
+            {
+                Nombre = form.Nombre.Trim(),
+                Slug = slug,
+                Direccion = form.Direccion.Trim(),
+                GoogleMapsUrl = form.GoogleMapsUrl,
+                Latitud = lat,
+                Longitud = lng,
+                Telefono = Validaciones.FormatearTelefono(telefonoNorm),
+                EmailContacto = form.Email.Trim(),
+                Horarios = horariosFinal,
+                Estado = EstadoSolicitud.Pendiente
+            };
+            await PeluqueriaService.CrearAsync(pelu);
+
+            var user = new ApplicationUser
+            {
+                UserName = form.Email.Trim(),
+                Email = form.Email.Trim(),
+                NombreCompleto = form.NombreCompleto.Trim(),
+                PeluqueriaId = pelu.Id,
+                EmailConfirmed = false,
+                LockoutEnabled = true,
+                LockoutEnd = DateTimeOffset.MaxValue
+            };
+            var creado = await UserManager.CreateAsync(user, form.Password);
+            if (!creado.Succeeded)
+            {
+                mensaje = string.Join(" ", creado.Errors.Select(e => e.Description));
+                mensajeOk = false;
+                await PeluqueriaService.EliminarAsync(pelu.Id);
+                return;
+            }
+
+            await UserManager.AddToRoleAsync(user, Roles.Dueno);
+
+            estadoProgreso = "Verificando que tu peluquería existe...";
+            StateHasChanged();
+            await Task.Yield();
+
+            // Intento de auto-verificación con OpenStreetMap
+            var verificacion = await Verificador.VerificarAsync(lat, lng);
+            if (verificacion.EsPeluqueria)
+            {
+                // OSM confirma que hay una peluquería en esa ubicación → auto-aprobar
+                await PeluqueriaService.AprobarAsync(pelu.Id, "OSM");
+                user.LockoutEnd = null;
+                user.EmailConfirmed = true;
+                await UserManager.UpdateAsync(user);
+
+                pelu.Estado = EstadoSolicitud.Aprobada;
+                await EmailService.NotificarAprobadaAsync(form.Email, pelu);
+                Nav.NavigateTo("/registro/enviada?aprobada=1");
+            }
+            else
+            {
+                // No verificable automáticamente → revisión manual
+                await EmailService.NotificarNuevaSolicitudAsync(pelu);
+                Nav.NavigateTo("/registro/enviada");
+            }
+        }
+        catch (Exception ex)
+        {
+            mensaje = $"Error al procesar la solicitud: {ex.Message}";
+            mensajeOk = false;
+        }
+        finally
+        {
+            enviando = false;
+            estadoProgreso = null;
+        }
+    }
+
+    private static readonly DayOfWeek[] OrdenSemana =
+    {
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+        DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
+    };
+
+    private static string NombreDia(DayOfWeek d) => d switch
+    {
+        DayOfWeek.Monday => "Lunes",
+        DayOfWeek.Tuesday => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday => "Jueves",
+        DayOfWeek.Friday => "Viernes",
+        DayOfWeek.Saturday => "Sábado",
+        DayOfWeek.Sunday => "Domingo",
+        _ => "?"
+    };
+
+    public class HorarioFormItem
+    {
+        public DayOfWeek Dia { get; set; }
+        public bool Abierto { get; set; } = true;
+        public string Apertura { get; set; } = "09:00";
+        public string Cierre { get; set; } = "21:00";
+    }
+
+    public class FormularioRegistro
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Nombre obligatorio")]
+        [System.ComponentModel.DataAnnotations.StringLength(120, MinimumLength = 2)]
+        public string Nombre { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Teléfono obligatorio")]
+        public string Telefono { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Dirección obligatoria")]
+        public string Direccion { get; set; } = string.Empty;
+
+        public string? GoogleMapsUrl { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Email obligatorio")]
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(120, MinimumLength = 2)]
+        public string NombreCompleto { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(60, MinimumLength = 8)]
+        public string Password { get; set; } = string.Empty;
+
+        public List<HorarioFormItem> Horarios { get; set; } = OrdenSemana
+            .Select(d => new HorarioFormItem { Dia = d, Abierto = true, Apertura = "09:00", Cierre = "21:00" })
+            .ToList();
+    }
+}

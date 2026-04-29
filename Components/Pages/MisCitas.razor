@@ -1,0 +1,136 @@
+@page "/mis-citas"
+@rendermode InteractiveServer
+@inject CitaService CitaService
+@inject EmailService EmailService
+@inject CodigoVerificacionService CodigoService
+
+<PageTitle>PeluCorte · Mis citas</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <h3 class="mb-3"><i class="bi bi-calendar-check me-2" style="color: var(--pc-primary);"></i>Mis citas</h3>
+
+        @if (paso == 1)
+        {
+            <div class="card pc-card">
+                <div class="card-body p-4">
+                    <p class="text-muted small">Introduce tu teléfono. Te enviaremos un código por email para verificar.</p>
+                    <div class="mb-3">
+                        <label class="pc-form-label">Teléfono</label>
+                        <input class="form-control pc-form-control" @bind="telefono"
+                               inputmode="tel" autocomplete="tel" placeholder="612 345 678" />
+                    </div>
+                    @if (error is not null) { <div class="alert alert-warning py-2 small">@error</div> }
+                    <button class="btn pc-btn-primary w-100" @onclick="EnviarCodigo" disabled="@procesando">
+                        @if (procesando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Enviando...</span> }
+                        else { <i class="bi bi-send me-1"></i><span>Enviar código</span> }
+                    </button>
+                </div>
+            </div>
+        }
+        else if (paso == 2)
+        {
+            <div class="card pc-card">
+                <div class="card-body p-4">
+                    <p class="text-muted small">Te hemos enviado un código a @emailEnmascarado. Caduca en 10 minutos.</p>
+                    <div class="mb-3">
+                        <label class="pc-form-label">Código de 6 dígitos</label>
+                        <input class="form-control pc-form-control" @bind="codigo" maxlength="6" inputmode="numeric" placeholder="123456" />
+                    </div>
+                    @if (error is not null) { <div class="alert alert-danger py-2 small">@error</div> }
+                    <button class="btn pc-btn-primary w-100" @onclick="Verificar" disabled="@procesando">
+                        <i class="bi bi-check2-circle me-1"></i>Verificar
+                    </button>
+                    <button class="btn btn-link mt-2 w-100" @onclick="() => paso = 1">Cambiar teléfono</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            @if (citas.Count == 0)
+            {
+                <div class="pc-empty"><i class="bi bi-calendar-x"></i><p class="mb-0">No tienes citas activas.</p></div>
+            }
+            else
+            {
+                @foreach (var c in citas)
+                {
+                    <div class="pc-mis-cita">
+                        <div>
+                            <div class="pc-mis-cita-fecha">@c.Fecha.ToString("dddd, dd MMM") · @c.Hora.ToString("HH\\:mm")</div>
+                            <div class="text-muted small">
+                                <i class="bi bi-shop me-1"></i>@(c.Peluqueria?.Nombre ?? "—")
+                                <span class="ms-2"><i class="bi bi-person me-1"></i>@(c.Peluquero?.Nombre ?? "—")</span>
+                            </div>
+                        </div>
+                        <a href="/cancelar/@c.CancelToken" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-x-circle me-1"></i>Cancelar
+                        </a>
+                    </div>
+                }
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private int paso = 1;
+    private string telefono = string.Empty;
+    private string codigo = string.Empty;
+    private string emailEnmascarado = string.Empty;
+    private string? error;
+    private bool procesando = false;
+    private List<Cita> citas = new();
+
+    private async Task EnviarCodigo()
+    {
+        error = null;
+        var telNorm = Validaciones.NormalizarTelefonoEs(telefono);
+        if (telNorm is null)
+        {
+            error = "Teléfono no válido. Debe ser un número español (9 dígitos, empezando por 6, 7, 8 o 9).";
+            return;
+        }
+
+        procesando = true;
+        try
+        {
+            // Buscamos por el formato con espacios (como se guarda en BD).
+            var formateado = Validaciones.FormatearTelefono(telNorm);
+            var citas = await CitaService.ObtenerPorTelefonoAsync(formateado);
+            var conEmail = citas.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Email));
+            if (conEmail is null)
+            {
+                error = "No encontramos citas activas asociadas a ese teléfono con email registrado.";
+                return;
+            }
+
+            var cod = CodigoService.Generar(formateado);
+            await EmailService.EnviarCodigoAsync(conEmail.Email!, cod);
+            emailEnmascarado = EnmascararEmail(conEmail.Email!);
+            telefono = formateado;
+            paso = 2;
+        }
+        finally { procesando = false; }
+    }
+
+    private async Task Verificar()
+    {
+        error = null;
+        if (!CodigoService.Validar(telefono, codigo.Trim()))
+        {
+            error = "Código incorrecto o caducado."; return;
+        }
+        citas = await CitaService.ObtenerPorTelefonoAsync(telefono);
+        paso = 3;
+    }
+
+    private static string EnmascararEmail(string email)
+    {
+        var at = email.IndexOf('@');
+        if (at <= 1) return "***" + email[at..];
+        var inicio = email[..1];
+        var resto = email[at..];
+        return inicio + new string('*', Math.Min(at - 1, 5)) + resto;
+    }
+}

@@ -1,0 +1,196 @@
+@page "/super-admin"
+@attribute [Authorize(Policy = "EsSuperAdmin")]
+@rendermode InteractiveServer
+@inject PeluqueriaService PeluqueriaService
+@inject EmailService EmailService
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>PeluCorte · Super Admin</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-shield-check me-2" style="color: var(--pc-primary);"></i>Super Admin</h2>
+        <p class="text-muted mb-0">Aprueba o rechaza las solicitudes de alta y revisa todas las peluquerías.</p>
+    </div>
+    <a href="/super-admin/datos" class="btn btn-outline-danger ms-auto">
+        <i class="bi bi-database-x me-1"></i>Gestión de datos
+    </a>
+</div>
+
+<div class="card pc-card mb-4">
+    <div class="card-header pc-card-header d-flex align-items-center justify-content-between">
+        <h5><i class="bi bi-hourglass-split me-2" style="color: var(--pc-primary);"></i>Solicitudes pendientes</h5>
+        <span class="badge bg-warning text-dark">@pendientes.Count</span>
+    </div>
+    <div class="card-body">
+        @if (pendientes.Count == 0)
+        {
+            <div class="pc-empty"><i class="bi bi-inbox"></i><p class="mb-0">No hay solicitudes pendientes.</p></div>
+        }
+        else
+        {
+            @foreach (var p in pendientes)
+            {
+                <div class="pc-solicitud">
+                    <div class="pc-solicitud-info">
+                        <div class="pc-solicitud-nombre">@p.Nombre</div>
+                        <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@p.Direccion</div>
+                        <div class="text-muted small"><i class="bi bi-envelope me-1"></i>@p.EmailContacto · <i class="bi bi-telephone me-1"></i>@p.Telefono</div>
+                        <div class="text-muted small"><i class="bi bi-clock me-1"></i>@p.HoraApertura.ToString("HH\\:mm") – @p.HoraCierre.ToString("HH\\:mm") · <i class="bi bi-pin-map me-1"></i>@p.Latitud.ToString("F4"), @p.Longitud.ToString("F4")</div>
+                        @if (!string.IsNullOrEmpty(p.GoogleMapsUrl))
+                        {
+                            <a href="@p.GoogleMapsUrl" target="_blank" rel="noopener" class="small">Ver en Google Maps</a>
+                        }
+                    </div>
+                    <div class="pc-solicitud-acciones">
+                        @if (rechazandoId == p.Id)
+                        {
+                            <input class="form-control pc-form-control mb-2" placeholder="Motivo del rechazo" @bind="motivoRechazo" />
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-danger" @onclick="() => Rechazar(p)">Confirmar rechazo</button>
+                                <button class="btn btn-sm btn-light" @onclick="() => rechazandoId = null">Cancelar</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="btn btn-success btn-sm" @onclick="() => Aprobar(p)"><i class="bi bi-check2 me-1"></i>Aprobar</button>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="() => { rechazandoId = p.Id; motivoRechazo = string.Empty; }"><i class="bi bi-x me-1"></i>Rechazar</button>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<div class="card pc-card">
+    <div class="card-header pc-card-header">
+        <h5><i class="bi bi-list-ul me-2" style="color: var(--pc-primary);"></i>Todas las peluquerías</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Estado</th>
+                        <th>Verificación</th>
+                        <th>Email</th>
+                        <th>Slug</th>
+                        <th>Creada</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in todas)
+                    {
+                        <tr>
+                            <td><strong>@p.Nombre</strong></td>
+                            <td><span class="pc-estado pc-estado-@p.Estado.ToString().ToLower()">@p.Estado</span></td>
+                            <td>
+                                @if (p.MetodoVerificacion == "OSM")
+                                {
+                                    <span class="pc-verif pc-verif-osm" title="Verificada automáticamente vía OpenStreetMap">
+                                        <i class="bi bi-shield-check me-1"></i>OSM
+                                    </span>
+                                }
+                                else if (p.MetodoVerificacion == "Manual")
+                                {
+                                    <span class="pc-verif pc-verif-manual" title="Aprobada manualmente">
+                                        <i class="bi bi-person-check me-1"></i>Manual
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
+                                }
+                            </td>
+                            <td class="small">@p.EmailContacto</td>
+                            <td class="small text-muted">@p.Slug</td>
+                            <td class="small text-muted">@p.CreadaEl.ToString("dd/MM/yyyy")</td>
+                            <td class="text-end">
+                                @if (p.Estado == EstadoSolicitud.Aprobada)
+                                {
+                                    <a href="/p/@p.Slug" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-box-arrow-up-right"></i></a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Peluqueria> pendientes = new();
+    private List<Peluqueria> todas = new();
+    private Guid? rechazandoId;
+    private string motivoRechazo = string.Empty;
+
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Recargar();
+    }
+
+    private async Task Recargar()
+    {
+        pendientes = await PeluqueriaService.ObtenerPendientesAsync();
+        todas = await PeluqueriaService.ObtenerTodasAsync();
+    }
+
+    private async Task Aprobar(Peluqueria p)
+    {
+        await PeluqueriaService.AprobarAsync(p.Id);
+
+        var dueno = await UserManager.Users.FirstOrDefaultAsync(u => u.PeluqueriaId == p.Id);
+        if (dueno is not null)
+        {
+            dueno.LockoutEnd = null;
+            dueno.EmailConfirmed = true;
+            await UserManager.UpdateAsync(dueno);
+        }
+
+        await EmailService.NotificarAprobadaAsync(p.EmailContacto, p);
+        await Recargar();
+        await MostrarMensaje($"Peluquería '{p.Nombre}' aprobada.", true);
+    }
+
+    private async Task Rechazar(Peluqueria p)
+    {
+        if (string.IsNullOrWhiteSpace(motivoRechazo))
+        {
+            await MostrarMensaje("Indica un motivo.", false);
+            return;
+        }
+        await PeluqueriaService.RechazarAsync(p.Id, motivoRechazo);
+        await EmailService.NotificarRechazadaAsync(p.EmailContacto, p, motivoRechazo);
+        rechazandoId = null;
+        motivoRechazo = string.Empty;
+        await Recargar();
+        await MostrarMensaje($"Peluquería '{p.Nombre}' rechazada.", true);
+    }
+
+    private async Task MostrarMensaje(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto;
+        mensajeOk = ok;
+        StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); }
+        catch (TaskCanceledException) { }
+    }
+}

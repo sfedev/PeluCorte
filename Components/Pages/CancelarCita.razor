@@ -1,0 +1,96 @@
+@page "/cancelar/{Token}"
+@rendermode InteractiveServer
+@inject CitaService CitaService
+@inject EmailService EmailService
+
+<PageTitle>PeluCorte · Cancelar cita</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card pc-card">
+            <div class="card-body p-4">
+                @if (cargando)
+                {
+                    <div class="pc-empty"><div class="spinner-border text-primary"></div></div>
+                }
+                else if (cita is null)
+                {
+                    <div class="pc-empty">
+                        <i class="bi bi-question-circle"></i>
+                        <h4>Cita no encontrada</h4>
+                        <p class="text-muted mb-0">El enlace puede haber caducado o la cita ya fue cancelada.</p>
+                        <a href="/" class="btn pc-btn-primary mt-3">Volver al inicio</a>
+                    </div>
+                }
+                else if (cancelada)
+                {
+                    <div class="text-center">
+                        <div class="pc-success-icon" style="background: linear-gradient(135deg, #e25563, #ff8fa1);"><i class="bi bi-x-circle"></i></div>
+                        <h3 class="mb-3">Cita cancelada</h3>
+                        <p class="text-muted">Tu cita en <strong>@(cita.Peluqueria?.Nombre ?? "la peluquería")</strong> el @cita.Fecha.ToString("dd/MM") a las @cita.Hora.ToString("HH\\:mm") ha sido cancelada.</p>
+                        <a href="/" class="btn pc-btn-primary mt-3"><i class="bi bi-house me-1"></i>Volver al inicio</a>
+                    </div>
+                }
+                else
+                {
+                    <h3 class="mb-1"><i class="bi bi-calendar-x me-2" style="color: var(--pc-danger);"></i>Cancelar cita</h3>
+                    <p class="text-muted">Estos son los datos de la cita que vas a cancelar:</p>
+                    <div class="pc-cancel-info">
+                        <div><i class="bi bi-shop me-1"></i><strong>@(cita.Peluqueria?.Nombre ?? "—")</strong></div>
+                        <div><i class="bi bi-person me-1"></i>@(cita.Peluquero?.Nombre ?? "—")</div>
+                        <div><i class="bi bi-calendar3 me-1"></i>@cita.Fecha.ToString("dd/MM/yyyy") · <i class="bi bi-clock me-1"></i>@cita.Hora.ToString("HH\\:mm")</div>
+                        <div class="text-muted small mt-2">Reservada a nombre de @cita.Nombre.</div>
+                    </div>
+                    <div class="d-flex gap-2 mt-4">
+                        <button class="btn btn-danger" @onclick="Cancelar" disabled="@cancelando">
+                            @if (cancelando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Cancelando...</span> }
+                            else { <i class="bi bi-trash me-1"></i><span>Confirmar cancelación</span> }
+                        </button>
+                        <a href="/" class="btn btn-light">Volver</a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    private Cita? cita;
+    private bool cargando = true;
+    private bool cancelando = false;
+    private bool cancelada = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        cita = await CitaService.ObtenerPorTokenAsync(Token);
+        cargando = false;
+    }
+
+    private async Task Cancelar()
+    {
+        if (cita is null) return;
+        cancelando = true;
+        var ok = await CitaService.CancelarPorTokenAsync(Token);
+        cancelando = false;
+        if (ok)
+        {
+            cancelada = true;
+
+            // Aviso al cliente (si dejó email)
+            if (cita.Peluqueria is not null && !string.IsNullOrWhiteSpace(cita.Email))
+                await EmailService.NotificarCancelacionClienteAsync(cita, cita.Peluqueria);
+
+            // Aviso al peluquero (si tiene cuenta) o al dueño (vía email de contacto del salón)
+            if (cita.Peluqueria is not null && cita.Peluquero is not null)
+            {
+                var emailDestino = cita.Peluquero.User?.Email;
+                if (string.IsNullOrWhiteSpace(emailDestino))
+                    emailDestino = cita.Peluqueria.EmailContacto;
+                if (!string.IsNullOrWhiteSpace(emailDestino))
+                    await EmailService.NotificarCancelacionPeluqueriaAsync(cita, cita.Peluqueria, cita.Peluquero, emailDestino);
+            }
+        }
+    }
+}

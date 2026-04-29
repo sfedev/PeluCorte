@@ -1,0 +1,43 @@
+@page "/registro/enviada"
+
+<PageTitle>PeluCorte · @(Aprobada == "1" ? "Peluquería activa" : "Solicitud enviada")</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card pc-card text-center">
+            <div class="card-body p-5">
+                <div class="pc-success-icon"><i class="bi bi-check2-circle"></i></div>
+
+                @if (Aprobada == "1")
+                {
+                    <h3 class="mb-3">¡Tu peluquería ya está activa!</h3>
+                    <p class="text-muted">
+                        Hemos verificado tu negocio automáticamente y ya puedes empezar a recibir reservas.
+                    </p>
+                    <p class="text-muted small">
+                        Te hemos enviado un email con la URL pública para que la compartas con tus clientes.
+                    </p>
+                    <a href="/login" class="btn pc-btn-primary mt-3"><i class="bi bi-box-arrow-in-right me-1"></i>Iniciar sesión</a>
+                }
+                else
+                {
+                    <h3 class="mb-3">¡Solicitud enviada!</h3>
+                    <p class="text-muted">
+                        Hemos recibido los datos de tu peluquería. No la hemos podido verificar
+                        automáticamente en OpenStreetMap (es habitual con peluquerías de barrio
+                        o recientes), así que la revisaremos manualmente y te enviaremos un email
+                        cuando sea aprobada (normalmente en menos de 24 horas).
+                    </p>
+                    <p class="text-muted small">
+                        Una vez aprobada, podrás iniciar sesión con el email y contraseña que has indicado.
+                    </p>
+                    <a href="/" class="btn pc-btn-primary mt-3"><i class="bi bi-house me-1"></i>Volver al inicio</a>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Aprobada { get; set; }
+}

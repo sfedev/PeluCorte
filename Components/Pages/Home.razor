@@ -1,0 +1,178 @@
+@page "/"
+@rendermode InteractiveServer
+@inject PeluqueriaService PeluqueriaService
+@inject GeoService GeoService
+@inject IJSRuntime JS
+
+<PageTitle>PeluCorte · Encuentra tu peluquería</PageTitle>
+
+<div class="pc-hero">
+    <div>
+        <h1 class="pc-hero-title">Reserva en tu peluquería favorita</h1>
+        <p class="pc-hero-sub">Encuentra una cerca de ti o búscala por nombre. Sin registro.</p>
+    </div>
+</div>
+
+<div class="card pc-card mb-4">
+    <div class="card-body p-4">
+        <div class="d-flex gap-2 mb-3 flex-wrap">
+            <button class="btn btn-sm @(modo == "cerca" ? "pc-btn-primary" : "btn-light")" @onclick='() => modo = "cerca"'>
+                <i class="bi bi-geo-alt me-1"></i>Cerca de mí
+            </button>
+            <button class="btn btn-sm @(modo == "nombre" ? "pc-btn-primary" : "btn-light")" @onclick='() => modo = "nombre"'>
+                <i class="bi bi-search me-1"></i>Por nombre
+            </button>
+        </div>
+
+        @if (modo == "cerca")
+        {
+            <label class="pc-form-label">¿Dónde estás?</label>
+            <div class="row g-2">
+                <div class="col-md-9">
+                    <input class="form-control pc-form-control" placeholder="Ej. Calle Mayor 12, Madrid"
+                           @bind="terminoBusqueda" @bind:event="oninput" @onkeydown="OnEnterBuscar" />
+                </div>
+                <div class="col-md-3">
+                    <button class="btn pc-btn-primary w-100" @onclick="Buscar" disabled="@buscando">
+                        @if (buscando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Buscando...</span> }
+                        else { <i class="bi bi-search me-1"></i><span>Buscar</span> }
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <label class="pc-form-label">Nombre de la peluquería</label>
+            <div class="row g-2">
+                <div class="col-md-9">
+                    <input class="form-control pc-form-control" placeholder="Ej. Mary"
+                           @bind="terminoBusqueda" @bind:event="oninput" @onkeydown="OnEnterBuscar" />
+                </div>
+                <div class="col-md-3">
+                    <button class="btn pc-btn-primary w-100" @onclick="Buscar" disabled="@buscando">
+                        @if (buscando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Buscando...</span> }
+                        else { <i class="bi bi-search me-1"></i><span>Buscar</span> }
+                    </button>
+                </div>
+            </div>
+        }
+        @if (errorBusqueda is not null)
+        {
+            <div class="text-danger small mt-2"><i class="bi bi-exclamation-circle me-1"></i>@errorBusqueda</div>
+        }
+    </div>
+</div>
+
+@if (peluquerias is null)
+{
+    <div class="pc-empty">
+        <i class="bi bi-shop-window"></i>
+        <p class="mb-0">Busca por dirección o nombre para empezar.</p>
+    </div>
+}
+else if (peluquerias.Count == 0)
+{
+    <div class="pc-empty">
+        <i class="bi bi-search"></i>
+        <p class="mb-0">No se han encontrado peluquerías.</p>
+    </div>
+}
+else
+{
+    <div id="mapa-resultados" class="pc-mapa mb-4"></div>
+
+    <div class="row g-3">
+        @foreach (var item in peluquerias)
+        {
+            <div class="col-md-6 col-lg-4">
+                <a href="/p/@item.Pelu.Slug" class="pc-pelu-result">
+                    <div class="pc-pelu-result-head">
+                        <i class="bi bi-shop"></i>
+                        <div>
+                            <div class="pc-pelu-result-name">@item.Pelu.Nombre</div>
+                            @if (item.Distancia.HasValue)
+                            {
+                                <div class="pc-pelu-result-dist">@item.Distancia.Value.ToString("F1") km</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="pc-pelu-result-addr"><i class="bi bi-geo-alt me-1"></i>@item.Pelu.Direccion</div>
+                    <div class="pc-pelu-result-tel"><i class="bi bi-clock me-1"></i>@item.Pelu.HoraApertura.ToString("HH\\:mm") – @item.Pelu.HoraCierre.ToString("HH\\:mm")</div>
+                </a>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string modo = "cerca";
+    private string terminoBusqueda = string.Empty;
+    private bool buscando = false;
+    private string? errorBusqueda;
+    private List<ResultadoPelu>? peluquerias;
+    private (double lat, double lng)? ultimoCentro;
+
+    private async Task OnEnterBuscar(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Buscar();
+    }
+
+    private async Task Buscar()
+    {
+        errorBusqueda = null;
+        if (string.IsNullOrWhiteSpace(terminoBusqueda)) { errorBusqueda = "Escribe algo para buscar."; return; }
+
+        buscando = true;
+        try
+        {
+            if (modo == "cerca")
+            {
+                var coords = await GeoService.GeocodificarAsync(terminoBusqueda);
+                var todas = await PeluqueriaService.ObtenerAprobadasAsync();
+                if (coords is null)
+                {
+                    peluquerias = todas.Select(p => new ResultadoPelu(p, null)).ToList();
+                    errorBusqueda = "No hemos podido localizar tu dirección. Mostramos todas las peluquerías.";
+                    ultimoCentro = null;
+                }
+                else
+                {
+                    ultimoCentro = coords;
+                    peluquerias = todas
+                        .Select(p => new ResultadoPelu(p, GeoService.DistanciaKm(coords.Value.lat, coords.Value.lng, p.Latitud, p.Longitud)))
+                        .OrderBy(r => r.Distancia ?? double.MaxValue)
+                        .ToList();
+                }
+            }
+            else
+            {
+                var encontradas = await PeluqueriaService.BuscarPorNombreAsync(terminoBusqueda);
+                peluquerias = encontradas.Select(p => new ResultadoPelu(p, null)).ToList();
+                ultimoCentro = null;
+            }
+        }
+        finally { buscando = false; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (peluquerias is null || peluquerias.Count == 0) return;
+        try
+        {
+            var centro = ultimoCentro ?? (peluquerias[0].Pelu.Latitud, peluquerias[0].Pelu.Longitud);
+            await JS.InvokeVoidAsync("PeluCorteMapa.init", "mapa-resultados", centro.lat, centro.lng);
+            var pins = peluquerias.Select(r => new
+            {
+                lat = r.Pelu.Latitud,
+                lng = r.Pelu.Longitud,
+                nombre = r.Pelu.Nombre,
+                direccion = r.Pelu.Direccion,
+                url = $"/p/{r.Pelu.Slug}"
+            }).ToArray();
+            await JS.InvokeVoidAsync("PeluCorteMapa.setPins", new object[] { pins });
+        }
+        catch { }
+    }
+
+    private record ResultadoPelu(Peluqueria Pelu, double? Distancia);
+}

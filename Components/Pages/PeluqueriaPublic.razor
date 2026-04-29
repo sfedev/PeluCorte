@@ -1,0 +1,359 @@
+@page "/p/{Slug}"
+@rendermode InteractiveServer
+@inject PeluqueriaService PeluqueriaService
+@inject PeluqueroService PeluqueroService
+@inject CitaService CitaService
+@inject ServicioService ServicioService
+@inject EmailService EmailService
+@inject RateLimitService RateLimit
+@inject IHttpContextAccessor HttpCtx
+
+<PageTitle>PeluCorte · @(peluqueria?.Nombre ?? "Peluquería")</PageTitle>
+
+@if (mensaje is not null)
+{
+    <div class="pc-toast @(mensajeOk ? "success" : "error")">
+        <i class="bi @(mensajeOk ? "bi-check-circle" : "bi-exclamation-circle") me-1"></i>@mensaje
+    </div>
+}
+
+@if (cargandoPelu)
+{
+    <div class="pc-empty"><div class="spinner-border text-primary"></div></div>
+}
+else if (peluqueria is null)
+{
+    <div class="pc-empty">
+        <i class="bi bi-question-circle"></i>
+        <p class="mb-0">Peluquería no encontrada.</p>
+        <a href="/" class="btn pc-btn-primary mt-3">Volver</a>
+    </div>
+}
+else
+{
+    <div class="pc-pelu-hero">
+        <div class="pc-pelu-hero-icon"><i class="bi bi-shop"></i></div>
+        <div>
+            <h2 class="mb-1">@peluqueria.Nombre</h2>
+            <div class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i>@peluqueria.Direccion</div>
+            <div class="text-muted small"><i class="bi bi-telephone me-1"></i>@peluqueria.Telefono</div>
+        </div>
+        @if (!string.IsNullOrEmpty(peluqueria.GoogleMapsUrl))
+        {
+            <a href="@peluqueria.GoogleMapsUrl" target="_blank" rel="noopener" class="btn btn-outline-primary ms-auto align-self-start">
+                <i class="bi bi-map me-1"></i>Ver en mapa
+            </a>
+        }
+    </div>
+
+    <div class="card pc-card mb-4">
+        <div class="card-body p-3">
+            <div class="pc-horarios-resumen">
+                @foreach (var h in HorariosOrdenados())
+                {
+                    <div class="pc-horario-row">
+                        <span class="pc-horario-dia">@NombreDia(h.Dia)</span>
+                        @if (h.Abierto)
+                        {
+                            <span class="pc-horario-rango">@h.Apertura.ToString("HH\\:mm") – @h.Cierre.ToString("HH\\:mm")</span>
+                        }
+                        else
+                        {
+                            <span class="pc-horario-cerrado">Cerrado</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card pc-card mb-4">
+        <div class="card-header pc-card-header">
+            <h5><i class="bi bi-calendar-plus me-2" style="color: var(--pc-primary);"></i>Reservar cita</h5>
+        </div>
+        <div class="card-body p-4">
+            @if (servicios.Count > 0)
+            {
+                <div class="mb-3">
+                    <label class="pc-form-label">Servicio</label>
+                    <div class="pc-servicios">
+                        @foreach (var s in servicios)
+                        {
+                            var sel = servicioSeleccionadoId == s.Id;
+                            <button type="button" class="pc-servicio-btn @(sel ? "active" : "")"
+                                    @onclick="() => SeleccionarServicio(s)">
+                                <div class="pc-servicio-nombre">@s.Nombre</div>
+                                <div class="pc-servicio-meta">
+                                    <i class="bi bi-clock me-1"></i>@s.DuracionMinutos min
+                                    @if (s.Precio.HasValue) { <span class="ms-2">@s.Precio.Value.ToString("F0") €</span> }
+                                </div>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="pc-form-label">Día</label>
+                    <input type="date" class="form-control pc-form-control"
+                           value="@fechaSeleccionada.ToString("yyyy-MM-dd")"
+                           min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")"
+                           @onchange="OnCambiarFecha" />
+                </div>
+                <div class="col-md-6">
+                    <label class="pc-form-label">Peluquero/a</label>
+                    <select class="form-select pc-form-control"
+                            value="@(peluqueroSeleccionadoId?.ToString() ?? "")"
+                            @onchange="OnCambiarPeluquero">
+                        <option value="">-- Selecciona --</option>
+                        @foreach (var p in peluqueros)
+                        {
+                            <option value="@p.Id">@p.Nombre</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (peluqueroSeleccionadoId is not null)
+            {
+                <label class="pc-form-label mb-2">Horarios disponibles (@duracionElegida min)</label>
+                @if (cargandoHoras) { <div class="spinner-border spinner-border-sm text-primary"></div> }
+                else if (peluqueria is not null && !peluqueria.EstaAbiertoEn(fechaSeleccionada))
+                {
+                    <p class="text-muted"><i class="bi bi-x-circle me-1"></i>La peluquería está cerrada ese día.</p>
+                }
+                else if (horasDisponibles.Count == 0) { <p class="text-muted">No hay huecos disponibles para ese día.</p> }
+                else
+                {
+                    <div class="pc-hora-grid">
+                        @foreach (var h in HorasDelDia())
+                        {
+                            var libre = horasDisponibles.Contains(h);
+                            var seleccionada = horaSeleccionada == h;
+                            <button type="button"
+                                    class="pc-hora-btn @(libre ? "" : "ocupada") @(seleccionada ? "seleccionada" : "")"
+                                    disabled="@(!libre)"
+                                    @onclick="() => SeleccionarHora(h)">
+                                @h.ToString("HH\\:mm")
+                            </button>
+                        }
+                    </div>
+                }
+            }
+
+            @if (horaSeleccionada is not null)
+            {
+                <hr class="my-4" />
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="pc-form-label">Tu nombre</label>
+                        <input class="form-control pc-form-control" @bind="nombre" placeholder="Ej. María López" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="pc-form-label">Teléfono</label>
+                        <input class="form-control pc-form-control" @bind="telefono"
+                               inputmode="tel" autocomplete="tel" placeholder="612 345 678" />
+                    </div>
+                    <div class="col-12">
+                        <label class="pc-form-label">Email <span class="text-muted">(opcional, para confirmación y cancelación)</span></label>
+                        <input type="email" class="form-control pc-form-control" @bind="emailCliente" placeholder="tu@email.com" />
+                    </div>
+                </div>
+                <button class="btn pc-btn-primary w-100 mt-3" @onclick="Reservar" disabled="@reservando">
+                    @if (reservando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Reservando...</span> }
+                    else { <i class="bi bi-check-circle me-1"></i><span>Confirmar reserva @horaSeleccionada.Value.ToString("HH\\:mm")</span> }
+                </button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    private Peluqueria? peluqueria;
+    private List<Peluquero> peluqueros = new();
+    private List<Servicio> servicios = new();
+    private HashSet<TimeOnly> horasDisponibles = new();
+
+    private DateOnly fechaSeleccionada = DateOnly.FromDateTime(DateTime.Today);
+    private Guid? peluqueroSeleccionadoId;
+    private Guid? servicioSeleccionadoId;
+    private int duracionElegida = 30;
+    private TimeOnly? horaSeleccionada;
+    private string nombre = string.Empty;
+    private string telefono = string.Empty;
+    private string emailCliente = string.Empty;
+
+    private bool cargandoPelu = true;
+    private bool cargandoHoras = false;
+    private bool reservando = false;
+    private string ipCliente = "anonimo";
+
+    private string? mensaje;
+    private bool mensajeOk;
+    private CancellationTokenSource? mensajeCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Capturamos la IP del cliente durante el render SSR inicial.
+        // Después de que arranque la sesión interactiva, HttpContext es null.
+        ipCliente = HttpCtx.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
+
+        peluqueria = await PeluqueriaService.ObtenerPorSlugAprobadaAsync(Slug);
+        if (peluqueria is not null)
+        {
+            peluqueros = await PeluqueroService.ObtenerPorPeluqueriaAsync(peluqueria.Id);
+            servicios = await ServicioService.ObtenerPorPeluqueriaAsync(peluqueria.Id, soloActivos: true);
+            if (servicios.Count > 0)
+            {
+                servicioSeleccionadoId = servicios[0].Id;
+                duracionElegida = servicios[0].DuracionMinutos;
+            }
+        }
+        cargandoPelu = false;
+    }
+
+    private IEnumerable<TimeOnly> HorasDelDia()
+    {
+        if (peluqueria is null) yield break;
+        var horario = peluqueria.HorarioDe(fechaSeleccionada);
+        if (!horario.Abierto) yield break;
+        var actual = horario.Apertura;
+        while (actual.AddMinutes(duracionElegida) <= horario.Cierre.AddMinutes(1))
+        {
+            yield return actual;
+            actual = actual.AddMinutes(30);
+        }
+    }
+
+    private static readonly DayOfWeek[] OrdenSemana =
+    {
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+        DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
+    };
+
+    private IEnumerable<HorarioDia> HorariosOrdenados()
+    {
+        if (peluqueria is null) yield break;
+        foreach (var d in OrdenSemana)
+        {
+            var h = peluqueria.Horarios.FirstOrDefault(x => x.Dia == d);
+            if (h is not null) yield return h;
+        }
+    }
+
+    private static string NombreDia(DayOfWeek d) => d switch
+    {
+        DayOfWeek.Monday => "Lunes",
+        DayOfWeek.Tuesday => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday => "Jueves",
+        DayOfWeek.Friday => "Viernes",
+        DayOfWeek.Saturday => "Sábado",
+        DayOfWeek.Sunday => "Domingo",
+        _ => "?"
+    };
+
+    private async Task OnCambiarFecha(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var f))
+        {
+            fechaSeleccionada = f;
+            horaSeleccionada = null;
+            await CargarDisponibles();
+        }
+    }
+
+    private async Task OnCambiarPeluquero(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        peluqueroSeleccionadoId = string.IsNullOrEmpty(v) ? null : Guid.Parse(v);
+        horaSeleccionada = null;
+        await CargarDisponibles();
+    }
+
+    private async Task SeleccionarServicio(Servicio s)
+    {
+        servicioSeleccionadoId = s.Id;
+        duracionElegida = s.DuracionMinutos;
+        horaSeleccionada = null;
+        await CargarDisponibles();
+    }
+
+    private async Task CargarDisponibles()
+    {
+        if (peluqueroSeleccionadoId is null || peluqueria is null) { horasDisponibles = new(); return; }
+        cargandoHoras = true;
+        var horario = peluqueria.HorarioDe(fechaSeleccionada);
+        horasDisponibles = await CitaService.ObtenerHorasDisponiblesAsync(
+            peluqueroSeleccionadoId.Value, fechaSeleccionada, duracionElegida, horario);
+        cargandoHoras = false;
+    }
+
+    private void SeleccionarHora(TimeOnly h) => horaSeleccionada = h;
+
+    private async Task Reservar()
+    {
+        if (peluqueria is null || peluqueroSeleccionadoId is null || horaSeleccionada is null) return;
+
+        // Anti-abuso: máximo 5 reservas por minuto desde la misma IP.
+        if (!RateLimit.Permitir($"booking:{ipCliente}", 5, TimeSpan.FromMinutes(1)))
+        {
+            await MostrarMensaje("Has hecho muchas reservas seguidas. Espera un minuto y prueba otra vez.", false);
+            return;
+        }
+
+        reservando = true;
+        var cita = new Cita
+        {
+            Nombre = nombre.Trim(),
+            Telefono = telefono.Trim(),
+            Email = string.IsNullOrWhiteSpace(emailCliente) ? null : emailCliente.Trim(),
+            Fecha = fechaSeleccionada,
+            Hora = horaSeleccionada.Value,
+            DuracionMinutos = duracionElegida,
+            ServicioId = servicioSeleccionadoId,
+            PeluqueroId = peluqueroSeleccionadoId.Value,
+            PeluqueriaId = peluqueria.Id
+        };
+
+        var horario = peluqueria.HorarioDe(cita.Fecha);
+        var (ok, error) = await CitaService.CrearAsync(cita, horario);
+        reservando = false;
+
+        if (!ok)
+        {
+            await MostrarMensaje(error ?? "No se pudo reservar.", false);
+            await CargarDisponibles();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(cita.Email))
+        {
+            var pelu = peluqueros.First(p => p.Id == cita.PeluqueroId);
+            await EmailService.NotificarConfirmacionCitaAsync(cita, peluqueria, pelu);
+        }
+
+        var msg = string.IsNullOrWhiteSpace(cita.Email)
+            ? $"Cita confirmada el {cita.Fecha:dd/MM} a las {cita.Hora:HH\\:mm}."
+            : $"Cita confirmada. Te hemos enviado un email a {cita.Email}.";
+        await MostrarMensaje(msg, true);
+
+        nombre = string.Empty;
+        telefono = string.Empty;
+        emailCliente = string.Empty;
+        horaSeleccionada = null;
+        await CargarDisponibles();
+    }
+
+    private async Task MostrarMensaje(string texto, bool ok)
+    {
+        mensajeCts?.Cancel();
+        mensajeCts = new CancellationTokenSource();
+        var token = mensajeCts.Token;
+        mensaje = texto; mensajeOk = ok; StateHasChanged();
+        try { await Task.Delay(3500, token); mensaje = null; StateHasChanged(); } catch { }
+    }
+}

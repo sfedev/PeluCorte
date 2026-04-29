@@ -1,0 +1,70 @@
+@page "/admin/historico"
+@attribute [Authorize(Policy = "EsDueno")]
+@rendermode InteractiveServer
+@inject CitaService CitaService
+@inject PeluqueroService PeluqueroService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>PeluCorte · Histórico</PageTitle>
+
+<div class="pc-admin-header d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-archive me-2" style="color: var(--pc-primary);"></i>Histórico de citas</h2>
+        <p class="text-muted mb-0 small"><a href="/admin"><i class="bi bi-arrow-left me-1"></i>Volver al panel</a></p>
+    </div>
+</div>
+
+<div class="card pc-card">
+    <div class="card-body p-3">
+        @if (cargando) { <div class="pc-empty"><div class="spinner-border text-primary"></div></div> }
+        else if (historico.Count == 0) { <div class="pc-empty"><i class="bi bi-archive"></i><p class="mb-0">Aún no hay citas pasadas.</p></div> }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Teléfono</th><th>Peluquero</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in historico)
+                        {
+                            var pelu = peluqueros.FirstOrDefault(p => p.Id == c.PeluqueroId);
+                            <tr>
+                                <td>@c.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td>@c.Hora.ToString("HH\\:mm")</td>
+                                <td><strong>@c.Nombre</strong></td>
+                                <td><a href="tel:@c.Telefono" class="text-muted text-decoration-none">@c.Telefono</a></td>
+                                <td>
+                                    @if (pelu is not null)
+                                    {
+                                        <span class="pc-pelu-pill" style="background-color:@(pelu.Color)20;color:@pelu.Color;">@pelu.Nombre</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private Guid? peluqueriaId;
+    private List<Cita> historico = new();
+    private List<Peluquero> peluqueros = new();
+    private bool cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(auth.User);
+        if (userId is null) { cargando = false; return; }
+        var user = await UserManager.FindByIdAsync(userId);
+        peluqueriaId = user?.PeluqueriaId;
+        if (peluqueriaId is null) { cargando = false; return; }
+
+        peluqueros = await PeluqueroService.ObtenerPorPeluqueriaAsync(peluqueriaId.Value);
+        historico = await CitaService.ObtenerHistoricoAsync(peluqueriaId.Value);
+        cargando = false;
+    }
+}
