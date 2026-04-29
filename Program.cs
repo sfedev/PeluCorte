@@ -185,7 +185,12 @@ try
         await next();
     });
 
-    app.UseHttpsRedirection();
+    // En producción detrás de Render/Fly/etc., el proxy ya redirige HTTP→HTTPS.
+    // Solo redirigimos en desarrollo (cuando arrancas con `dotnet run`).
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
     app.UseStaticFiles();
     app.UseAntiforgery();
     app.UseRateLimiter();
