@@ -19,6 +19,16 @@ RUN dotnet publish PeluCorte.csproj \
     -o /app/publish \
     --no-restore
 
+# Diagnóstico: listar qué quedó en wwwroot/_framework. Lo veremos en los logs de Render.
+RUN echo "=== /app/publish contents ===" && \
+    ls -la /app/publish/ && \
+    echo "=== /app/publish/wwwroot ===" && \
+    ls -la /app/publish/wwwroot/ 2>&1 || echo "wwwroot no existe" && \
+    echo "=== /app/publish/wwwroot/_framework ===" && \
+    ls -la /app/publish/wwwroot/_framework/ 2>&1 || echo "_framework no existe" && \
+    echo "=== Manifests staticwebassets ===" && \
+    find /app/publish -name "*staticwebassets*" 2>&1 || echo "ninguno"
+
 # ============================================================
 #  Runtime stage — imagen final ligera
 # ============================================================
