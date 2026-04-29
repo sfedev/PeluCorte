@@ -169,7 +169,7 @@ try
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com",
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com",
         "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-        "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
+        "img-src 'self' data: blob: https: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://unpkg.com",
         "connect-src 'self' wss: https: ws://localhost:* https://nominatim.openstreetmap.org https://overpass-api.de",
         "frame-ancestors 'self'",
         "base-uri 'self'",
