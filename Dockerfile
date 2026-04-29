@@ -20,23 +20,10 @@ RUN dotnet publish PeluCorte.csproj \
     -o /app/publish \
     --no-restore
 
-# Si por algún motivo blazor.web.js no se materializó en wwwroot/_framework/,
-# lo copiamos manualmente desde el cache de NuGet donde lo deja el SDK.
-RUN mkdir -p /app/publish/wwwroot/_framework && \
-    if [ ! -f /app/publish/wwwroot/_framework/blazor.web.js ]; then \
-        echo "blazor.web.js NO está en publish, copiando desde NuGet..."; \
-        find /root/.nuget /usr/share/dotnet -name "blazor.web.js" 2>/dev/null | head -5; \
-        BLAZOR_JS=$(find /root/.nuget -name "blazor.web.js" 2>/dev/null | head -1); \
-        if [ -n "$BLAZOR_JS" ]; then \
-            cp "$BLAZOR_JS" /app/publish/wwwroot/_framework/blazor.web.js; \
-            echo "Copiado desde $BLAZOR_JS"; \
-        else \
-            echo "ERROR: blazor.web.js no encontrado en NuGet"; \
-        fi; \
-    else \
-        echo "blazor.web.js OK en publish"; \
-    fi && \
-    ls -la /app/publish/wwwroot/_framework/ 2>&1 || true
+# Verificación rápida: que blazor.web.js esté efectivamente en publish.
+# (El archivo viene físicamente del repo en wwwroot/_framework/.)
+RUN test -f /app/publish/wwwroot/_framework/blazor.web.js \
+    || (echo "ERROR: blazor.web.js falta en publish" && exit 1)
 
 # ============================================================
 #  Runtime stage — imagen final ligera
