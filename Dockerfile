@@ -11,12 +11,13 @@ RUN dotnet restore PeluCorte.csproj
 # Copiar el resto del código (lo que NO esté en .dockerignore)
 COPY . .
 
-# Publicar en Release
+# Publicar en Release.
+# IMPORTANTE: NO usamos /p:UseAppHost=false porque rompe la generación
+# del manifest de Static Web Assets (blazor.web.js no se serviría).
 RUN dotnet publish PeluCorte.csproj \
     -c Release \
     -o /app/publish \
-    --no-restore \
-    /p:UseAppHost=false
+    --no-restore
 
 # ============================================================
 #  Runtime stage — imagen final ligera
