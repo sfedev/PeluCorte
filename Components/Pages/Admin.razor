@@ -7,6 +7,11 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthState
 @inject NavigationManager Nav
+@inject EmailService EmailServiceForUrl
+
+@code {
+    private string AppUrlPelu => EmailServiceForUrl.AppUrl;
+}
 
 <PageTitle>PeluCorte · Mi peluquería</PageTitle>
 
@@ -37,6 +42,24 @@ else
         </div>
         <div class="ms-auto small text-muted">
             <i class="bi bi-clock me-1"></i>@peluqueria.HoraApertura.ToString("HH\\:mm") – @peluqueria.HoraCierre.ToString("HH\\:mm")
+        </div>
+    </div>
+
+    <div class="card pc-card mb-4">
+        <div class="card-header pc-card-header">
+            <h5><i class="bi bi-qr-code me-2" style="color: var(--pc-primary);"></i>QR para tus clientes</h5>
+        </div>
+        <div class="card-body p-4">
+            <div class="pc-qr-container">
+                <img src="/qr/@(peluqueria.Slug).png" alt="QR de @peluqueria.Nombre" class="pc-qr-image" />
+                <div class="pc-qr-info">
+                    <p class="mb-2">Imprime este código y ponlo en tu local, o compártelo en redes sociales. Cualquiera que lo escanee aterriza en <strong>tu página de reservas</strong>.</p>
+                    <div class="text-muted small mb-3"><i class="bi bi-link-45deg me-1"></i>@($"{AppUrlPelu}/p/{peluqueria.Slug}")</div>
+                    <a href="/qr/@(peluqueria.Slug).png" download="@(peluqueria.Slug)-qr.png" class="btn pc-btn-primary">
+                        <i class="bi bi-download me-1"></i>Descargar PNG
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 

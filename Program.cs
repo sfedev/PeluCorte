@@ -135,6 +135,7 @@ try
     builder.Services.AddScoped<EmailService>();
     builder.Services.AddSingleton<CodigoVerificacionService>();
     builder.Services.AddSingleton<RateLimitService>();
+    builder.Services.AddSingleton<QrService>();
     builder.Services.AddHttpClient<GeoService>();
     builder.Services.AddHttpClient<VerificadorPeluqueriaService>();
     builder.Services.AddHostedService<RecordatorioService>();
@@ -205,6 +206,17 @@ try
     // Endpoint de salud para health checks externos (UptimeRobot, Render, etc.)
     // Responde 200 a cualquier método HTTP. Sin lógica pesada, solo "estoy vivo".
     app.MapMethods("/health", new[] { "GET", "HEAD" }, () => Results.Ok("OK"));
+
+    // QR público de la peluquería: apunta a /p/{slug} para que los clientes
+    // escaneen y reserven. La imagen se cachea 1h en el cliente.
+    app.MapGet("/qr/{slug}.png", async (string slug, PeluqueriaService pelu, QrService qr, EmailService email) =>
+    {
+        var p = await pelu.ObtenerPorSlugAprobadaAsync(slug);
+        if (p is null) return Results.NotFound();
+        var url = $"{email.AppUrl}/p/{p.Slug}";
+        var png = qr.GenerarPng(url, pixelesPorModulo: 12);
+        return Results.Bytes(png, "image/png", $"{p.Slug}-qr.png");
+    });
 
     app.MapPost("/api/login", async (HttpContext ctx, SignInManager<ApplicationUser> signIn, UserManager<ApplicationUser> users) =>
     {

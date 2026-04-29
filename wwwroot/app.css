@@ -730,6 +730,40 @@ body {
 
 .pc-footer a:hover { color: var(--pc-primary); }
 
+.pc-qr-container {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.pc-qr-image {
+    width: 200px;
+    height: 200px;
+    background: #fff;
+    padding: 12px;
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(60, 40, 120, 0.08);
+    image-rendering: pixelated;
+}
+
+.pc-qr-info {
+    flex: 1;
+    min-width: 240px;
+    color: var(--pc-text);
+}
+
+@media (max-width: 575.98px) {
+    .pc-qr-container { flex-direction: column; gap: 1rem; }
+    .pc-qr-image { width: 220px; height: 220px; align-self: center; }
+    .pc-qr-info { text-align: center; }
+}
+
+[data-tema="oscuro"] .pc-qr-image {
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
 .pc-cookie-banner {
     position: fixed;
     bottom: 0;

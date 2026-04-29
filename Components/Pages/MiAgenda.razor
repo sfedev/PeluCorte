@@ -51,6 +51,26 @@ else
         }
     </div>
 
+    @if (peluquero.Peluqueria is not null)
+    {
+        <div class="card pc-card mb-4">
+            <div class="card-header pc-card-header">
+                <h5><i class="bi bi-qr-code me-2" style="color: var(--pc-primary);"></i>QR de la peluquería</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="pc-qr-container">
+                    <img src="/qr/@(peluquero.Peluqueria.Slug).png" alt="QR" class="pc-qr-image" />
+                    <div class="pc-qr-info">
+                        <p class="mb-2 small">Comparte este código con tus clientes para que reserven directamente. Útil para imprimir en tarjetas o compartir en WhatsApp/Instagram.</p>
+                        <a href="/qr/@(peluquero.Peluqueria.Slug).png" download="@(peluquero.Peluqueria.Slug)-qr.png" class="btn btn-sm pc-btn-primary">
+                            <i class="bi bi-download me-1"></i>Descargar
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
     <div class="card pc-card">
         <div class="card-header pc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
             <h5><i class="bi bi-calendar3 me-2" style="color: var(--pc-primary);"></i>@FormatearDiaCompleto(fechaSeleccionada)</h5>
